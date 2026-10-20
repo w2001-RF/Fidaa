@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f1220" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%23b3201f' d='M0 0h32v32H0z'/%3E%3Cpath fill='none' stroke='%231d6b3a' stroke-width='2.4' d='M16 6l5.9 18.1L6.5 12.9h19L10.1 24.1z'/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=El+Messiri:wght@500;700&family=Alegreya+Sans:wght@400;500;700&display=swap" rel="stylesheet" />
+    <title>FIDĀʾĪ — Morocco 1945</title>
+  </head>
+  <body>
+    <main id="app">
+      <canvas id="game-canvas" aria-label="FIDAI 1945 game view"></canvas>
+
+      <!-- ===== HUD ===== -->
+      <section id="hud" class="hidden" aria-live="polite">
+        <div id="vitals">
+          <div class="bar-row">
+            <svg class="ico" viewBox="0 0 24 24"><path d="M12 21s-7.5-4.6-9.6-9.3C.9 8.3 3.2 4.5 6.8 4.5c2.1 0 3.5 1.2 5.2 3 1.7-1.8 3.1-3 5.2-3 3.6 0 5.9 3.8 4.4 7.2C19.5 16.4 12 21 12 21z"/></svg>
+            <div class="bar health"><i id="health-fill"></i><b id="health-ghost"></b></div>
+            <span id="health-num" class="num">100</span>
+          </div>
+          <div class="bar-row thin">
+            <svg class="ico small" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>
+            <div class="bar stamina"><i id="stamina-fill"></i></div>
+          </div>
+          <div class="gauges">
+            <div class="gauge" id="hunger-gauge" title="Hunger">
+              <svg viewBox="0 0 24 24"><path d="M4 13c0-4 3.6-7 8-7s8 3 8 7c0 2.6-2.2 4-8 4s-8-1.4-8-4zm3 0h10M8 10.5l1 1M12 9.6v1.4M16 10.5l-1 1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            </div>
+            <div class="gauge" id="thirst-gauge" title="Thirst">
+              <svg viewBox="0 0 24 24"><path d="M9 3h6l-1 3c3 1 4.5 4 4.5 7 0 4.4-2.9 8-6.5 8S5.5 17.4 5.5 13c0-3 1.5-6 4.5-7z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8 14c1 1.6 2.4 2.4 4 2.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+            </div>
+            <div class="gauge-label"><span id="hunger-num">85</span><span id="thirst-num">70</span></div>
+          </div>
+        </div>
+
+        <canvas id="compass" width="560" height="52"></canvas>
+
+        <div id="status">
+          <div id="clock"><span id="clock-icon"></span><span id="clock-text">16:30</span></div>
+          <div id="alert-badge" class="hidden-state"><span class="dot"></span><span id="alert-text">Unseen</span></div>
+          <div id="level"><span class="lvl">Lv <b id="level-num">1</b></span><div class="xpbar"><i id="xp-fill"></i></div></div>
+        </div>
+
+        <div id="objective">
+          <div class="obj-head"><span class="star"></span><span id="obj-title">Bread and Water</span></div>
+          <ul id="obj-list"></ul>
+        </div>
+
+        <div id="toasts"></div>
+
+        <div id="weapon">
+          <div id="quick">
+            <div class="q"><kbd>Q</kbd><span class="qi water"></span><b id="q-water">1</b></div>
+            <div class="q"><kbd>F</kbd><span class="qi bread"></span><b id="q-food">3</b></div>
+            <div class="q"><kbd>H</kbd><span class="qi herbs"></span><b id="q-herbs">0</b></div>
+          </div>
+          <div id="weapon-card">
+            <div id="weapon-icon"></div>
+            <div class="wtext"><span id="weapon-name">Khanjar</span><span id="ammo"><b id="ammo-clip">—</b><i id="ammo-reserve"></i></span></div>
+          </div>
+        </div>
+
+        <div id="crosshair"><i></i><i></i><i></i><i></i></div>
+        <div id="hitmarker"></div>
+        <div id="prompt" class="hidden"><kbd>E</kbd><span id="prompt-text"></span><svg viewBox="0 0 36 36" id="prompt-ring"><circle cx="18" cy="18" r="15" /></svg></div>
+        <div id="indicators"></div>
+        <div id="damage-dir"></div>
+        <div id="banner" class="hidden"><small id="banner-kicker"></small><strong id="banner-title"></strong><span id="banner-sub"></span></div>
+        <div id="lock-hint" class="hidden">Click to take control · <kbd>Esc</kbd> pauses</div>
+      </section>
+
+      <div id="dialogue" class="hidden">
+        <div class="speaker" id="dlg-speaker"></div>
+        <p id="dlg-text"></p>
+        <div class="dlg-next"><kbd>E</kbd> / click to continue</div>
+      </div>
+
+      <div id="flash"></div>
+
+      <!-- ===== TITLE ===== -->
+      <section id="title-screen" class="overlay">
+        <div class="title-inner">
+          <div class="title-ar">فدائي</div>
+          <h1>FIDĀʾĪ</h1>
+          <div class="title-sub">Morocco · 1945 · The Protectorate</div>
+          <p class="title-intro">
+            Since the Manifesto of Independence of <b>11 January 1944</b>, the Résidence Générale has answered the nationalists with arrests, curfews and the whip.
+            In the countryside, the Caïds and their mokhaznis serve the occupier. You are <b>Driss</b>, a young fidāʾī of a clandestine cell in the douar of Tifawt.
+            Survive the land. Strike, and vanish.
+          </p>
+          <button id="btn-start" class="btn primary" type="button">Begin the struggle</button>
+          <div class="controls-grid">
+            <div><kbd>W A S D</kbd> move</div><div><kbd>Mouse</kbd> look</div>
+            <div><kbd>Shift</kbd> sprint</div><div><kbd>C</kbd> crouch / sneak</div>
+            <div><kbd>LMB</kbd> strike / fire</div><div><kbd>RMB</kbd> aim rifle</div>
+            <div><kbd>1</kbd> khanjar <kbd>2</kbd> rifle</div><div><kbd>R</kbd> reload</div>
+            <div><kbd>E</kbd> interact / takedown</div><div><kbd>Q F H</kbd> drink · eat · herbs</div>
+            <div><kbd>Tab</kbd> inventory &amp; skills</div><div><kbd>M</kbd> map · <kbd>Esc</kbd> pause</div>
+          </div>
+          <p class="title-note">A work of historical fiction. Places and characters are invented; the struggle for independence (1944–1956) was not.</p>
+        </div>
+      </section>
+
+      <!-- ===== PAUSE ===== -->
+      <section id="pause-screen" class="overlay hidden">
+        <div class="modal">
+          <h2>Paused</h2>
+          <button id="btn-resume" class="btn primary" type="button">Resume</button>
+          <button id="btn-mute" class="btn" type="button">Sound: on</button>
+          <label class="slider">Volume <input id="vol" type="range" min="0" max="1" step="0.05" value="0.8" /></label>
+          <label class="slider">Mouse sensitivity <input id="sens" type="range" min="0.0008" max="0.006" step="0.0002" value="0.0024" /></label>
+          <button id="btn-restart" class="btn subtle" type="button">Restart from the hideout</button>
+        </div>
+      </section>
+
+      <!-- ===== DEATH ===== -->
+      <section id="death-screen" class="overlay hidden">
+        <div class="modal grave">
+          <div class="title-ar small">الشهيد</div>
+          <h2>You have fallen</h2>
+          <p id="death-cause"></p>
+          <p class="hint" id="death-hint"></p>
+          <button id="btn-retry" class="btn primary" type="button">Rise again at Douar Tifawt</button>
+        </div>
+      </section>
+
+      <!-- ===== VICTORY ===== -->
+      <section id="victory-screen" class="overlay hidden">
+        <div class="modal wide">
+          <div class="title-ar">الاستقلال</div>
+          <h2>The weapons reach the mountains</h2>
+          <p>
+            The rifles of Bir Lahmam are now in the Atlas. Tonight, in a hundred douars, people whisper the name of a fidāʾī they will never meet.
+          </p>
+          <p class="epilogue">
+            History did not end in 1945. In August 1953 the French deposed and exiled Sultan Mohammed V, and the armed resistance of the fidāʾiyīn and the Army of Liberation rose across the country.
+            The Sultan returned in November 1955, and on <b>2 March 1956</b> Morocco regained its independence.
+          </p>
+          <div id="victory-stats"></div>
+          <button id="btn-continue" class="btn primary" type="button">Keep roaming the land</button>
+        </div>
+      </section>
+
+      <!-- ===== INVENTORY / JOURNAL / SKILLS ===== -->
+      <section id="panel" class="overlay hidden">
+        <div class="modal panel">
+          <nav class="tabs">
+            <button data-tab="inv" class="tab active" type="button">Satchel</button>
+            <button data-tab="journal" class="tab" type="button">Journal</button>
+            <button data-tab="skills" class="tab" type="button">Skills <span id="sp-badge"></span></button>
+            <button id="btn-close-panel" class="tab close" type="button" aria-label="Close">✕</button>
+          </nav>
+          <div class="tab-body" id="tab-inv"></div>
+          <div class="tab-body hidden" id="tab-journal"></div>
+          <div class="tab-body hidden" id="tab-skills"></div>
+        </div>
+      </section>
+
+      <!-- ===== MAP ===== -->
+      <section id="map-screen" class="overlay hidden">
+        <div class="map-wrap">
+          <canvas id="map-canvas" width="720" height="720"></canvas>
+          <div class="map-legend"><span class="lg you"></span>You <span class="lg obj"></span>Objective <span class="lg safe"></span>Hideout <span class="lg foe"></span>Hunting you · <kbd>M</kbd> close</div>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

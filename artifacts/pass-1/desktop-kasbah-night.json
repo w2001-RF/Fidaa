@@ -1,0 +1,132 @@
+{
+  "url": "http://127.0.0.1:5188",
+  "mode": "desktop",
+  "state": "kasbah-night",
+  "requestedState": "kasbah-night",
+  "appliedState": "kasbah-night",
+  "runId": "pass-1",
+  "seed": 42,
+  "screenshotPath": "artifacts/pass-1/desktop-kasbah-night.png",
+  "gpu": {
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4060 (0x00002882) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "vendor": "Google Inc. (NVIDIA)",
+    "softwareRendered": false
+  },
+  "result": {
+    "ok": true,
+    "reason": "nonblank",
+    "rect": {
+      "x": 0,
+      "y": 0,
+      "width": 1280,
+      "height": 720
+    },
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 720
+    },
+    "alphaPixels": 4096,
+    "variance": 240,
+    "colorBuckets": 141,
+    "metrics": {
+      "colorBuckets": 185,
+      "colorEntropyBits": 5.08,
+      "edgeDensity": 0.142,
+      "luminance": {
+        "mean": 83.7,
+        "p5": 8.4,
+        "p95": 139.3,
+        "contrast": 130.8
+      },
+      "dominantColorShare": 0.094,
+      "nonBackgroundShare": 0.906
+    },
+    "renderBudget": {
+      "tier": "desktop",
+      "note": "starting-point budget; adjust per game and document overrides",
+      "rows": [
+        {
+          "metric": "calls",
+          "actual": 131,
+          "limit": 300,
+          "ok": true
+        },
+        {
+          "metric": "triangles",
+          "actual": 374641,
+          "limit": 750000,
+          "ok": true
+        },
+        {
+          "metric": "geometries",
+          "actual": 159,
+          "limit": 300,
+          "ok": true
+        },
+        {
+          "metric": "textures",
+          "actual": 76,
+          "limit": 60,
+          "ok": false
+        }
+      ],
+      "withinBudget": false
+    },
+    "diagnostics": {
+      "frame": 14,
+      "elapsed": 0.20134200000009325,
+      "score": 3,
+      "targetScore": 5,
+      "complete": false,
+      "player": {
+        "position": {
+          "x": 84,
+          "y": 3.3800127506256032,
+          "z": 102
+        },
+        "speed": 0
+      },
+      "renderer": {
+        "calls": 131,
+        "triangles": 374641,
+        "geometries": 159,
+        "textures": 76
+      },
+      "canvas": {
+        "clientWidth": 1280,
+        "clientHeight": 720,
+        "width": 1280,
+        "height": 720,
+        "dpr": 1
+      },
+      "game": {
+        "state": "playing",
+        "hour": 22.5,
+        "health": 100,
+        "hunger": 84.99761111111114,
+        "thirst": 69.99641666666662,
+        "dead": false,
+        "alert": "hidden",
+        "mission": "prison",
+        "step": 1,
+        "enemiesAlive": 27,
+        "kills": 0,
+        "inventory": {
+          "bread": 1,
+          "dates": 2,
+          "herbs": 1,
+          "ammo": 12,
+          "leaflet": 0,
+          "key": 0,
+          "water": 3
+        },
+        "clip": 5,
+        "interact": null
+      }
+    }
+  },
+  "consoleErrors": [],
+  "pageErrors": [],
+  "consoleErrorCount": 0,
+  "pageErrorCount": 0
+}

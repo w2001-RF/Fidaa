@@ -1,0 +1,9 @@
+{
+  "seed": 12345,
+  "takedownAlert": "hidden",
+  "secondsToDeathUnderFire": 8.342,
+  "travelled": 33,
+  "softlockWindows": 0,
+  "missionReached": "leaflets",
+  "errors": []
+}

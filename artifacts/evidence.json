@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "runId": "pass-1",
+  "captures": [
+    { "mode": "desktop", "state": "title", "report": "artifacts/pass-1/desktop-title.json" },
+    { "mode": "desktop", "state": "active-play", "report": "artifacts/pass-1/desktop-active-play.json" },
+    { "mode": "desktop", "state": "medina-souk", "report": "artifacts/pass-1/desktop-medina-souk.json" },
+    { "mode": "desktop", "state": "medina-day", "report": "artifacts/pass-1/desktop-medina-day.json" },
+    { "mode": "desktop", "state": "kasbah-night", "report": "artifacts/pass-1/desktop-kasbah-night.json" },
+    { "mode": "desktop", "state": "night-stealth", "report": "artifacts/pass-1/desktop-night-stealth.json" },
+    { "mode": "desktop", "state": "combat", "report": "artifacts/pass-1/desktop-combat.json" },
+    { "mode": "desktop", "state": "dialogue", "report": "artifacts/pass-1/desktop-dialogue.json" },
+    { "mode": "desktop", "state": "inventory", "report": "artifacts/pass-1/desktop-inventory.json" },
+    { "mode": "desktop", "state": "map", "report": "artifacts/pass-1/desktop-map.json" },
+    { "mode": "desktop", "state": "death", "report": "artifacts/pass-1/desktop-death.json" },
+    { "mode": "desktop", "state": "victory", "report": "artifacts/pass-1/desktop-victory.json" }
+  ]
+}

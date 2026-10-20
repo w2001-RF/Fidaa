@@ -1,0 +1,11 @@
+node_modules/
+dist/
+test-results/
+playwright-report/
+# scratch captures; the evidence in artifacts/ (docs + pass-1) is committed
+artifacts/smoke/
+artifacts/preview/
+.env
+.env.*
+*.log
+.DS_Store

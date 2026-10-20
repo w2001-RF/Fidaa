@@ -1,0 +1,132 @@
+{
+  "url": "http://127.0.0.1:5188",
+  "mode": "desktop",
+  "state": "medina-day",
+  "requestedState": "medina-day",
+  "appliedState": "medina-day",
+  "runId": "pass-1",
+  "seed": 42,
+  "screenshotPath": "artifacts/pass-1/desktop-medina-day.png",
+  "gpu": {
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4060 (0x00002882) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "vendor": "Google Inc. (NVIDIA)",
+    "softwareRendered": false
+  },
+  "result": {
+    "ok": true,
+    "reason": "nonblank",
+    "rect": {
+      "x": 0,
+      "y": 0,
+      "width": 1280,
+      "height": 720
+    },
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 720
+    },
+    "alphaPixels": 4096,
+    "variance": 227,
+    "colorBuckets": 71,
+    "metrics": {
+      "colorBuckets": 99,
+      "colorEntropyBits": 3.89,
+      "edgeDensity": 0.11,
+      "luminance": {
+        "mean": 85.1,
+        "p5": 35.7,
+        "p95": 123.5,
+        "contrast": 87.8
+      },
+      "dominantColorShare": 0.192,
+      "nonBackgroundShare": 0.808
+    },
+    "renderBudget": {
+      "tier": "desktop",
+      "note": "starting-point budget; adjust per game and document overrides",
+      "rows": [
+        {
+          "metric": "calls",
+          "actual": 281,
+          "limit": 300,
+          "ok": true
+        },
+        {
+          "metric": "triangles",
+          "actual": 756263,
+          "limit": 750000,
+          "ok": false
+        },
+        {
+          "metric": "geometries",
+          "actual": 176,
+          "limit": 300,
+          "ok": true
+        },
+        {
+          "metric": "textures",
+          "actual": 80,
+          "limit": 60,
+          "ok": false
+        }
+      ],
+      "withinBudget": false
+    },
+    "diagnostics": {
+      "frame": 14,
+      "elapsed": 0.20144199999999993,
+      "score": 1,
+      "targetScore": 5,
+      "complete": false,
+      "player": {
+        "position": {
+          "x": -82,
+          "y": -1.900267720222474,
+          "z": 36
+        },
+        "speed": 0
+      },
+      "renderer": {
+        "calls": 281,
+        "triangles": 756263,
+        "geometries": 176,
+        "textures": 80
+      },
+      "canvas": {
+        "clientWidth": 1280,
+        "clientHeight": 720,
+        "width": 1280,
+        "height": 720,
+        "dpr": 1
+      },
+      "game": {
+        "state": "playing",
+        "hour": 17.4,
+        "health": 100,
+        "hunger": 84.99762500000003,
+        "thirst": 69.99643749999996,
+        "dead": false,
+        "alert": "hidden",
+        "mission": "leaflets",
+        "step": 1,
+        "enemiesAlive": 27,
+        "kills": 0,
+        "inventory": {
+          "bread": 1,
+          "dates": 2,
+          "herbs": 1,
+          "ammo": 12,
+          "leaflet": 3,
+          "key": 0,
+          "water": 3
+        },
+        "clip": 5,
+        "interact": null
+      }
+    }
+  },
+  "consoleErrors": [],
+  "pageErrors": [],
+  "consoleErrorCount": 0,
+  "pageErrorCount": 0
+}

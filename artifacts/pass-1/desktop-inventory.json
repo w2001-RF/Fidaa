@@ -1,0 +1,132 @@
+{
+  "url": "http://127.0.0.1:5188",
+  "mode": "desktop",
+  "state": "inventory",
+  "requestedState": "inventory",
+  "appliedState": "inventory",
+  "runId": "pass-1",
+  "seed": 42,
+  "screenshotPath": "artifacts/pass-1/desktop-inventory.png",
+  "gpu": {
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4060 (0x00002882) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "vendor": "Google Inc. (NVIDIA)",
+    "softwareRendered": false
+  },
+  "result": {
+    "ok": true,
+    "reason": "nonblank",
+    "rect": {
+      "x": 0,
+      "y": 0,
+      "width": 1280,
+      "height": 720
+    },
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 720
+    },
+    "alphaPixels": 4096,
+    "variance": 231,
+    "colorBuckets": 72,
+    "metrics": {
+      "colorBuckets": 96,
+      "colorEntropyBits": 4.01,
+      "edgeDensity": 0.148,
+      "luminance": {
+        "mean": 53.2,
+        "p5": 18.7,
+        "p95": 91.7,
+        "contrast": 73
+      },
+      "dominantColorShare": 0.266,
+      "nonBackgroundShare": 0.734
+    },
+    "renderBudget": {
+      "tier": "desktop",
+      "note": "starting-point budget; adjust per game and document overrides",
+      "rows": [
+        {
+          "metric": "calls",
+          "actual": 202,
+          "limit": 300,
+          "ok": true
+        },
+        {
+          "metric": "triangles",
+          "actual": 601390,
+          "limit": 750000,
+          "ok": true
+        },
+        {
+          "metric": "geometries",
+          "actual": 148,
+          "limit": 300,
+          "ok": true
+        },
+        {
+          "metric": "textures",
+          "actual": 73,
+          "limit": 60,
+          "ok": false
+        }
+      ],
+      "withinBudget": false
+    },
+    "diagnostics": {
+      "frame": 14,
+      "elapsed": 0.21094200000009322,
+      "score": 0,
+      "targetScore": 5,
+      "complete": false,
+      "player": {
+        "position": {
+          "x": -134,
+          "y": 4.5,
+          "z": 120
+        },
+        "speed": 0
+      },
+      "renderer": {
+        "calls": 202,
+        "triangles": 601390,
+        "geometries": 148,
+        "textures": 73
+      },
+      "canvas": {
+        "clientWidth": 1280,
+        "clientHeight": 720,
+        "width": 1280,
+        "height": 720,
+        "dpr": 1
+      },
+      "game": {
+        "state": "panel",
+        "hour": 12,
+        "health": 100,
+        "hunger": 84.99761111111114,
+        "thirst": 69.99641666666662,
+        "dead": false,
+        "alert": "hidden",
+        "mission": "bread",
+        "step": 0,
+        "enemiesAlive": 27,
+        "kills": 0,
+        "inventory": {
+          "bread": 1,
+          "dates": 2,
+          "herbs": 1,
+          "ammo": 12,
+          "leaflet": 0,
+          "key": 0,
+          "water": 3
+        },
+        "clip": 5,
+        "interact": null
+      }
+    }
+  },
+  "consoleErrors": [],
+  "pageErrors": [],
+  "consoleErrorCount": 0,
+  "pageErrorCount": 0
+}

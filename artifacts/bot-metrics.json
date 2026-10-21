@@ -1,8 +1,8 @@
 {
   "seed": 12345,
   "takedownAlert": "hidden",
-  "secondsToDeathUnderFire": 10.62,
-  "travelled": 33,
+  "secondsToDeathUnderFire": 10.59,
+  "travelled": 34,
   "softlockWindows": 0,
   "missionReached": "leaflets",
   "errors": []

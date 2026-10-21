@@ -679,7 +679,14 @@ export class AudioSystem {
   gunShot(weapon: string): void {
     if (!this.ready() || this.playFile(`shot-${weapon}`)) return;
     const t = this.now();
-    if (weapon === 'pistol') {
+    if (weapon === 'sling') {
+      // whirl and release: a soft whoosh, no report
+      for (let k = 0; k < 2; k += 1) this.noiseBurst(t + k * 0.12, 0.12, 900 + k * 500, 0.12, this.sfx, 'bandpass');
+    } else if (weapon === 'shotgun') {
+      this.noiseBurst(t, 0.3, 1300, 0.95, this.sfx, 'lowpass');
+      this.tone(110, 0.3, 0.6, 'sine', t, this.sfx, 0.4);
+      this.noiseBurst(t + 0.3, 0.8, 450, 0.18, this.sfx, 'lowpass');
+    } else if (weapon === 'pistol') {
       this.rifleShot(0, 0, true);
     } else if (weapon === 'smg') {
       this.noiseBurst(t, 0.09, 2600, 0.55, this.sfx, 'lowpass');
@@ -694,6 +701,39 @@ export class AudioSystem {
     } else {
       this.rifleShot(0, 0);
     }
+  }
+
+  /** Axe blows and the creak and crash of a falling tree. */
+  chop(): void {
+    if (!this.ready()) return;
+    const t = this.now();
+    for (let k = 0; k < 3; k += 1) {
+      this.noiseBurst(t + k * 0.22, 0.08, 1100, 0.35, this.sfx, 'bandpass');
+      this.tone(180, 0.1, 0.2, 'triangle', t + k * 0.22, this.sfx, 0.7);
+    }
+    this.tone(90, 0.9, 0.12, 'sawtooth', t + 0.7, this.sfx, 0.6);
+    this.noiseBurst(t + 1.4, 0.7, 700, 0.4, this.sfx, 'lowpass');
+  }
+
+  /** Hammer on stone: ringing strikes and falling rubble. */
+  quarry(): void {
+    if (!this.ready()) return;
+    const t = this.now();
+    for (let k = 0; k < 3; k += 1) {
+      this.tone(1600 + this.rng() * 400, 0.12, 0.12, 'square', t + k * 0.25, this.sfx, 0.5);
+      this.noiseBurst(t + k * 0.25, 0.06, 3200, 0.25, this.sfx, 'highpass');
+    }
+    for (let k = 0; k < 5; k += 1) this.noiseBurst(t + 0.8 + k * 0.07, 0.1, 900, 0.15, this.sfx, 'lowpass');
+  }
+
+  /** Boar grunt / squeal. */
+  grunt(distance: number): void {
+    if (!this.ready()) return;
+    const t = this.now();
+    const vol = 0.35 * (1 - Math.min(1, distance / 60) * 0.85);
+    this.tone(120, 0.28, vol, 'sawtooth', t, this.sfx, 0.6);
+    this.noiseBurst(t, 0.25, 500, vol * 0.6, this.sfx, 'lowpass');
+    this.tone(420, 0.18, vol * 0.4, 'square', t + 0.22, this.sfx, 1.4);
   }
 
   craft(): void {

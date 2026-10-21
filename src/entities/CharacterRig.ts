@@ -320,13 +320,13 @@ export class CharacterRig {
   }
 
   /** Swap the carried gun model (player weapon switching). */
-  equipGun(kind: 'rifle' | 'pistol' | 'musket' | 'smg'): void {
+  equipGun(kind: 'rifle' | 'pistol' | 'musket' | 'smg' | 'sling' | 'shotgun'): void {
     if (this.rifle?.name === kind) return;
     this.rifle?.removeFromParent();
     this.rifleInHands = false;
     let g = this.guns.get(kind);
     if (!g) {
-      g = kind === 'rifle' ? buildRifle() : kind === 'pistol' ? buildPistol() : kind === 'musket' ? buildMusket() : buildSmg();
+      g = kind === 'rifle' ? buildRifle() : kind === 'pistol' ? buildPistol() : kind === 'musket' ? buildMusket() : kind === 'sling' ? buildSling() : kind === 'shotgun' ? buildShotgun() : buildSmg();
       this.guns.set(kind, g);
     }
     this.rifle = g;
@@ -733,6 +733,28 @@ function buildSmg(): THREE.Mesh {
   p(new THREE.BoxGeometry(0.038, 0.3, 0.05), '#6a4426', 0, 0.16, 0.02, 0.12); // stock
   p(new THREE.BoxGeometry(0.008, 0.03, 0.01), '#1c1c1e', 0, -0.46, -0.048); // sight
   return finishGun(parts, 'smg', -0.52);
+}
+
+/** Shepherd's sling: two cords and a leather pouch holding a stone. */
+function buildSling(): THREE.Mesh {
+  const { parts, p } = gunParts();
+  p(new THREE.CylinderGeometry(0.004, 0.004, 0.42, 4), '#8a6a3a', 0.012, -0.2, 0, 0, 0.06);
+  p(new THREE.CylinderGeometry(0.004, 0.004, 0.42, 4), '#8a6a3a', -0.012, -0.2, 0, 0, -0.06);
+  p(new THREE.SphereGeometry(0.04, 8, 6), '#6a4a2a', 0, -0.42, 0);
+  p(new THREE.DodecahedronGeometry(0.025, 0), '#9a9088', 0, -0.42, 0.015);
+  return finishGun(parts, 'sling', -0.44, true);
+}
+
+/** Side-by-side hunting shotgun with a leather sling strap. */
+function buildShotgun(): THREE.Mesh {
+  const { parts, p } = gunParts();
+  for (const x of [-0.012, 0.012]) p(new THREE.CylinderGeometry(0.011, 0.011, 0.7, 8), '#2a2a2e', x, -0.42, -0.022);
+  p(new THREE.BoxGeometry(0.05, 0.4, 0.04), '#6a4426', 0, -0.25, 0.006); // fore-end
+  p(new THREE.BoxGeometry(0.048, 0.1, 0.05), '#3a3a3e', 0, -0.02, -0.01); // action
+  p(new THREE.BoxGeometry(0.045, 0.34, 0.06), '#7a4f2c', 0, 0.18, 0.025, 0.18); // stock
+  p(new THREE.TorusGeometry(0.02, 0.004, 4, 10, Math.PI), '#2a2a2e', 0, 0.02, 0.03, 0, Math.PI / 2);
+  p(new THREE.BoxGeometry(0.008, 0.62, 0.012), '#5a3a22', 0.03, -0.12, 0.04); // leather strap
+  return finishGun(parts, 'shotgun', -0.78);
 }
 
 /** Curved Moroccan khanjar (koummiya) with brass hilt. */

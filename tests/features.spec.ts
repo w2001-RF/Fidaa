@@ -170,14 +170,14 @@ test('exploration: landmarks are discovered and lift the fog of war', async ({ p
   expect(errors).toEqual([]);
 });
 
-test('skills and settings: six skills at five ranks, quality and fullscreen controls', async ({ page }) => {
+test('skills and settings: seven skills at five ranks, quality and fullscreen controls', async ({ page }) => {
   const errors: string[] = [];
   await boot(page, errors);
   await page.click('#btn-start');
   await wait(page, 100);
   await press(page, 'Tab');
   await click(page, '.tab[data-tab="skills"]');
-  await expect(page.locator('#tab-skills .skill')).toHaveCount(6);
+  await expect(page.locator('#tab-skills .skill')).toHaveCount(7);
   await expect(page.locator('#tab-skills .skill').first().locator('.pips i')).toHaveCount(5);
   await press(page, 'Tab');
 

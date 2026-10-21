@@ -64,7 +64,7 @@ export class Player {
 
   weapon: Weapon = 'blade';
   readonly owned = new Set<WeaponId>(['blade', 'rifle']);
-  readonly clips: Record<WeaponId, number> = { blade: 0, rifle: 3, pistol: 0, musket: 0, smg: 0 };
+  readonly clips: Record<WeaponId, number> = { blade: 0, rifle: 3, pistol: 0, musket: 0, smg: 0, sling: 0, shotgun: 0 };
   readonly upgrades = new Set<Upgrade>();
   meleeT = -1;
   meleeHitDone = false;
@@ -270,9 +270,9 @@ export class Player {
       if (this.reloadT >= 1) {
         this.reloadT = -1;
         const need = gun.clip - this.clip;
-        const take = Math.min(need, this.inventory[gun.ammo]);
+        const take = gun.infinite ? need : Math.min(need, this.inventory[gun.ammo]);
         this.clip += take;
-        this.inventory[gun.ammo] -= take;
+        if (!gun.infinite) this.inventory[gun.ammo] -= take;
       }
     } else if (!gun) this.reloadT = -1;
 
@@ -308,6 +308,7 @@ export class Player {
 
   damage(amount: number, cause: DeathCause, now: number, flinch = true): void {
     if (this.dead) return;
+    if (this.upgrades.has('hideVest') && (cause.kind === 'shot' || cause.kind === 'melee')) amount *= 0.8;
     this.health -= amount;
     this.lastDamageAt = now;
     if (flinch) {

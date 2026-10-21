@@ -9,7 +9,7 @@ export default defineConfig({
   // CI renders WebGL on the CPU (no GPU), so timed phases get one retry and more time
   retries: process.env.CI ? 1 : 0,
   timeout: process.env.CI ? 300_000 : 120_000,
-  reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
+  reporter: process.env.CI ? [['list'], ['github'], ['html', { open: 'never' }]] : 'list',
   expect: {
     timeout: 5_000,
   },

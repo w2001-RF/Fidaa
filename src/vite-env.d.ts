@@ -47,6 +47,9 @@ interface ThreeGameTestHooks {
   grantWeapon?(weapon: string): void;
   landmarks?(): { id: string; x: number; z: number }[];
   setLang?(lang: string): void;
+  animals?(): { id: string; species: string; x: number; y: number; z: number; alive: boolean; skinned: boolean }[];
+  aimAt?(x: number, y: number, z: number): void;
+  harvestables?(kind: string): { id: number; x: number; z: number; scale: number }[];
   stress?(radius: number): void;
 }
 

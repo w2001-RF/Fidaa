@@ -8,6 +8,24 @@ import type { Terrain } from './Terrain';
 
 type Species = 'palm' | 'olive' | 'argan' | 'cactus' | 'rock' | 'scrub';
 
+/** A tree that can be felled or a rock that can be quarried. */
+export type Harvestable = {
+  id: number;
+  kind: 'tree' | 'rock';
+  species: 'palm' | 'olive' | 'argan' | 'rock';
+  x: number;
+  z: number;
+  y: number;
+  scale: number;
+  done: boolean;
+  refs: { mesh: THREE.InstancedMesh; index: number }[];
+  collider?: { enabled: boolean };
+  cover?: { r: number };
+};
+
+const HARVEST_CELL = 8;
+const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
+
 type Part = { geometry: THREE.BufferGeometry; lo?: THREE.BufferGeometry; material: THREE.Material; shadow: boolean };
 
 /** Beyond this distance chunks swap to low-detail geometry and stop casting shadows. */
@@ -23,6 +41,9 @@ export class Vegetation {
   readonly group = new THREE.Group();
   /** Spots that conceal a crouched player (olive/argan canopies, cactus, scrub clumps). */
   readonly cover: { x: number; z: number; r: number }[] = [];
+  readonly harvestables: Harvestable[] = [];
+  private readonly harvestByMatrix = new Map<THREE.Matrix4, Harvestable>();
+  private readonly harvestGrid = new Map<string, Harvestable[]>();
   private readonly swayMaterials: THREE.MeshStandardMaterial[] = [];
   private readonly chunks: { center: THREE.Vector3; meshes: THREE.InstancedMesh[]; maxDist: number }[] = [];
   private readonly parts: Record<Species, Part[]>;
@@ -77,6 +98,40 @@ export class Vegetation {
     }
   }
 
+  /** Nearest standing tree or rock within `maxDist` of (x, z). */
+  nearestHarvestable(x: number, z: number, maxDist: number): Harvestable | null {
+    let best: Harvestable | null = null;
+    let bestD = maxDist;
+    const cx = Math.floor(x / HARVEST_CELL);
+    const cz = Math.floor(z / HARVEST_CELL);
+    for (let i = cx - 1; i <= cx + 1; i += 1) {
+      for (let j = cz - 1; j <= cz + 1; j += 1) {
+        for (const h of this.harvestGrid.get(`${i}:${j}`) ?? []) {
+          if (h.done) continue;
+          // reach the trunk or the rock's surface, not its centre
+          const d = Math.hypot(h.x - x, h.z - z) - (h.kind === 'rock' ? h.scale * 0.8 : 0.4);
+          if (d < bestD) {
+            bestD = d;
+            best = h;
+          }
+        }
+      }
+    }
+    return best;
+  }
+
+  /** Fell a tree / break up a rock: its instances vanish, its collider and cover go with it. */
+  harvest(h: Harvestable): void {
+    if (h.done) return;
+    h.done = true;
+    for (const { mesh, index } of h.refs) {
+      mesh.setMatrixAt(index, ZERO);
+      mesh.instanceMatrix.needsUpdate = true;
+    }
+    if (h.collider) h.collider.enabled = false;
+    if (h.cover) h.cover.r = 0;
+  }
+
   private swayMaterial(amount: number, key: string): THREE.MeshStandardMaterial {
     const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, side: THREE.DoubleSide });
     m.onBeforeCompile = (shader) => {
@@ -117,6 +172,17 @@ export class Vegetation {
         out.set(sp, list);
       }
       list.push(m);
+      return m;
+    };
+    const harvest = (m: THREE.Matrix4, kind: 'tree' | 'rock', sp: Harvestable['species'], x: number, z: number, scale: number) => {
+      const h: Harvestable = { id: this.harvestables.length, kind, species: sp, x, z, y: terrain.getHeight(x, z), scale, done: false, refs: [] };
+      this.harvestables.push(h);
+      this.harvestByMatrix.set(m, h);
+      const key = `${Math.floor(x / HARVEST_CELL)}:${Math.floor(z / HARVEST_CELL)}`;
+      const cell = this.harvestGrid.get(key);
+      if (cell) cell.push(h);
+      else this.harvestGrid.set(key, [h]);
+      return h;
     };
 
     const inSettlement = (x: number, z: number, pad: number) => {
@@ -138,7 +204,8 @@ export class Vegetation {
       const x = oasis.x + Math.cos(a) * r;
       const z = oasis.z + Math.sin(a) * r;
       if (!free(x, z, 1)) continue;
-      add('palm', x, z, 0.8 + rng() * 0.5, -0.1, 0.25);
+      const ps = 0.8 + rng() * 0.5;
+      harvest(add('palm', x, z, ps, -0.1, 0.25), 'tree', 'palm', x, z, ps);
     }
     for (let i = 0; i < 70; i += 1) {
       const seg = Math.floor(rng() * (OUED.length - 1));
@@ -153,7 +220,8 @@ export class Vegetation {
       const x = ax + (bx - ax) * t + (nx / nl) * off;
       const z = az + (bz - az) * t + (nz / nl) * off;
       if (Math.hypot(x, z) > PLAY_RADIUS - 4 || inSettlement(x, z, 2) || !free(x, z, 1)) continue;
-      add('palm', x, z, 0.7 + rng() * 0.5, -0.1, 0.3);
+      const ps = 0.7 + rng() * 0.5;
+      harvest(add('palm', x, z, ps, -0.1, 0.3), 'tree', 'palm', x, z, ps);
     }
 
     // Olive groves: between douar and medina, and around the douar
@@ -170,8 +238,10 @@ export class Vegetation {
         if (rng() > p) continue;
         if (distToRoads(x, z) < 5 || inSettlement(x, z, 3) || !free(x, z, 1.2)) continue;
         if (terrain.getSlope(x, z) > 0.45) continue;
-        add('olive', x, z, 0.85 + rng() * 0.45);
-        this.cover.push({ x, z, r: 2.4 });
+        const os = 0.85 + rng() * 0.45;
+        const cov = { x, z, r: 2.4 };
+        harvest(add('olive', x, z, os), 'tree', 'olive', x, z, os).cover = cov;
+        this.cover.push(cov);
       }
     }
 
@@ -186,8 +256,10 @@ export class Vegetation {
       const roll = rng();
       if (roll < 0.11 && slope < 0.55) {
         if (!free(x, z, 1.2)) continue;
-        add('argan', x, z, 0.8 + rng() * 0.5);
-        this.cover.push({ x, z, r: 2.6 });
+        const as = 0.8 + rng() * 0.5;
+        const cov = { x, z, r: 2.6 };
+        harvest(add('argan', x, z, as), 'tree', 'argan', x, z, as).cover = cov;
+        this.cover.push(cov);
       } else if (roll < 0.17) {
         if (!free(x, z, 0.8)) continue;
         add('cactus', x, z, 0.8 + rng() * 0.6, 0, 0.1);
@@ -216,10 +288,16 @@ export class Vegetation {
       if (distToRoads(x, z) < 3.5 || inSettlement(x, z, 1)) continue;
       const big = rng() < 0.12;
       const s = big ? 1.6 + rng() * 2.4 : 0.3 + rng() * 0.9;
-      add('rock', x, z, s, -s * 0.25, 0.8);
+      const rm = add('rock', x, z, s, -s * 0.25, 0.8);
+      const h = s > 0.7 && r < PLAY_RADIUS - 4 ? harvest(rm, 'rock', 'rock', x, z, s) : null;
       if (big && r < PLAY_RADIUS) {
-        collision.addCircle(x, z, s * 0.85, terrain.getHeight(x, z) - 1, terrain.getHeight(x, z) + s * 1.2, true, 'rock');
-        this.cover.push({ x, z, r: s * 1.3 });
+        const c = collision.addCircle(x, z, s * 0.85, terrain.getHeight(x, z) - 1, terrain.getHeight(x, z) + s * 1.2, true, 'rock');
+        const cov = { x, z, r: s * 1.3 };
+        this.cover.push(cov);
+        if (h) {
+          h.collider = c;
+          h.cover = cov;
+        }
       }
     }
 
@@ -267,7 +345,10 @@ export class Vegetation {
           const mesh = new THREE.InstancedMesh(part.geometry, part.material, list.length);
           mesh.userData.hi = part.geometry;
           if (part.lo) mesh.userData.lo = part.lo;
-          list.forEach((m, i) => mesh.setMatrixAt(i, m));
+          list.forEach((m, i) => {
+            mesh.setMatrixAt(i, m);
+            this.harvestByMatrix.get(m)?.refs.push({ mesh, index: i });
+          });
           mesh.instanceMatrix.needsUpdate = true;
           mesh.computeBoundingSphere();
           mesh.castShadow = part.shadow;

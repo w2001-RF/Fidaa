@@ -6,6 +6,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { MaterialLibrary } from '../assets/Materials';
 import { Enemy, type EnemyContext, type ShotRequest } from '../entities/Enemy';
 import { Npc } from '../entities/Npc';
+import { SPECIES, Wildlife, type Animal } from '../entities/Wildlife';
 import { Player, type Skill } from '../entities/Player';
 import { AudioSystem } from '../systems/Audio';
 import { CameraRig } from '../systems/CameraRig';
@@ -16,10 +17,10 @@ import { clamp } from '../utils/noise';
 import { createSeededRandom } from '../utils/random';
 import { NavGrid } from '../world/NavGrid';
 import { Sky } from '../world/Sky';
-import { Vegetation } from '../world/Vegetation';
+import { Vegetation, type Harvestable } from '../world/Vegetation';
 import { World } from '../world/World';
 import { zone } from '../world/layout';
-import { lang, onLangChange, setLang, t, tr, trAlt, type Lang } from '../i18n';
+import { L, lang, onLangChange, setLang, t, tr, trAlt, type Lang } from '../i18n';
 import { ITEMS, RECIPES, SKILL_MAX, WEAPONS, WEAPON_ORDER, emptyInventory, type Recipe, type WeaponId } from './Items';
 import { AMBIENT_LINES, MISSIONS, QuestSystem, type Line } from './Quests';
 import type { Interactable, ItemId, LootBundle } from './types';
@@ -54,6 +55,10 @@ export class Game {
   private readonly loop: Loop;
   private readonly lights: THREE.PointLight[] = [];
   private readonly carryCrate: THREE.Mesh;
+  private readonly wildlife: Wildlife;
+  /** One reusable prompt for the nearest tree or rock (thousands exist; only the closest matters). */
+  private readonly harvestIt: Interactable = { id: 'harvest', kind: 'harvest', pos: new THREE.Vector3(), radius: 2.6, prompt: { en: '', ar: '' }, hold: 2.2, enabled: false };
+  private harvestRef: Harvestable | null = null;
 
   private state: GameState = 'title';
   private frame = 0;
@@ -74,7 +79,7 @@ export class Game {
   private concealed = false;
   private concealT = 0;
   private lightT = 0;
-  private stats = { kills: 0, takedowns: 0, shots: 0, startDay: 0 };
+  private stats = { kills: 0, takedowns: 0, shots: 0, startDay: 0, hunts: 0 };
   private carrying = false;
   private prisonOpened = false;
   private victoryShown = false;
@@ -150,6 +155,21 @@ export class Game {
     for (const e of this.enemies) {
       this.world.interactables.push({ id: `body-${e.spawn.id}`, kind: 'body', pos: e.pos, radius: 1.9, prompt: { en: `Search the ${e.label.en}`, ar: `فتّش ${e.label.ar}` }, hold: 0.8, enabled: false, ref: e.spawn.id });
     }
+
+    // wildlife: gazelles, boars and hares of the wilds, each carcass can be skinned
+    this.wildlife = new Wildlife(this.world.terrain, this.world.collision);
+    this.scene.add(this.wildlife.group);
+    this.wildlife.onAttack = (a) => this.onAnimalAttack(a);
+    this.wildlife.onCharge = (a) => {
+      this.audio.grunt(a.pos.distanceTo(this.camera.position));
+      if (a.pos.distanceTo(this.player.pos) < 40) this.hud.toast(t('msg.boarCharge'), 'bad');
+    };
+    for (const a of this.wildlife.animals) {
+      const name = SPECIES[a.species].name;
+      this.world.interactables.push({ id: `carcass-${a.id}`, kind: 'carcass', pos: a.pos, radius: 2, prompt: { en: `Skin the ${name.en.toLowerCase()}`, ar: `سلخ ${name.ar}` }, hold: 1.6, enabled: false, ref: a.id });
+    }
+
+    this.world.interactables.push(this.harvestIt);
 
     this.carryCrate = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.42, 0.32), new THREE.MeshStandardMaterial({ color: '#4f5a35', roughness: 0.8 }));
     this.carryCrate.position.set(0, 0.1, -0.3);
@@ -484,6 +504,16 @@ export class Game {
         if (!e.alive && e.respawnAt === Infinity) this.onEnemyKilledCleanup(e);
         if (!e.alive && this.gameTime > e.respawnAt && e.pos.distanceTo(this.player.pos) > 120) this.respawnEnemy(e);
       }
+      this.wildlife.update(sim, {
+        playerPos: this.player.pos,
+        stealth: this.player.stealthFactor() * (this.concealed ? 0.5 : 1),
+        hunterRank: this.player.skills.hunter,
+        night: this.sky.night,
+        now: this.gameTime,
+        cameraPos: this.camera.position,
+        playerDead: this.player.dead || this.state === 'title',
+      });
+      this.syncCarcasses();
       for (const n of this.npcs) {
         n.rig.root.visible = !n.fled && n.pos.distanceTo(this.camera.position) < 110;
         n.update(sim, this.world.terrain, this.world.collision, this.player.pos);
@@ -559,7 +589,7 @@ export class Game {
     const p = this.player;
     const i = this.input;
     if (p.dead) return;
-    const slotKeys = ['weapon1', 'weapon2', 'weapon3', 'weapon4', 'weapon5'] as const;
+    const slotKeys = ['weapon1', 'weapon2', 'weapon3', 'weapon4', 'weapon5', 'weapon6', 'weapon7'] as const;
     slotKeys.forEach((k, idx) => {
       if (!i.wasPressed(k)) return;
       const w = WEAPON_ORDER[idx];
@@ -572,11 +602,11 @@ export class Game {
       p.setWeapon(owned[(at + (i.wheel > 0 ? 1 : -1) + owned.length) % owned.length]);
     }
     if (i.wasPressed('drink')) this.useItem('water');
-    if (i.wasPressed('eat')) this.useItem(p.inventory.bread > 0 ? 'bread' : 'dates');
+    if (i.wasPressed('eat')) this.useItem(p.inventory.cookedMeat > 0 ? 'cookedMeat' : p.inventory.bread > 0 ? 'bread' : 'dates');
     if (i.wasPressed('heal')) this.useItem(p.inventory.bandage > 0 && p.health < p.maxHealth - 30 ? 'bandage' : 'herbs');
 
     const gun = p.gun;
-    if (gun && i.wasPressed('reload') && p.reloadT < 0 && p.clip < gun.clip && p.inventory[gun.ammo] > 0) {
+    if (gun && i.wasPressed('reload') && p.reloadT < 0 && p.clip < gun.clip && (gun.infinite || p.inventory[gun.ammo] > 0)) {
       p.reloadT = 0;
       this.audio.reload();
     }
@@ -602,7 +632,7 @@ export class Game {
       } else if (p.reloadT < 0 && p.fireCooldown <= 0) {
         if (p.clip <= 0) {
           this.audio.dryFire();
-          if (p.inventory.ammo > 0) {
+          if (gun && (gun.infinite || p.inventory[gun.ammo] > 0)) {
             p.reloadT = 0;
             this.audio.reload();
           } else this.hud.toast(t('msg.noAmmo'), 'bad');
@@ -667,7 +697,20 @@ export class Game {
       this.hitstop(0.06);
       if (killed) this.onKill(e, unaware);
       else this.onEnemyAlert(e);
-      break;
+      return;
+    }
+    for (const a of this.wildlife.animals) {
+      if (a.state === 'dead') continue;
+      const dx = a.pos.x - p.pos.x;
+      const dz = a.pos.z - p.pos.z;
+      const d = Math.hypot(dx, dz);
+      if (d > 2.2 || (dx * fx + dz * fz) / (d || 1) < 0.3) continue;
+      const killed = this.wildlife.takeHit(a, 60 * (p.upgrades.has('sharpBlade') ? 1.6 : 1) * (1 + p.skills.hunter * 0.2), p.pos);
+      this.audio.hit(true);
+      this.vfx.impact(this.tmpA.set(a.pos.x, a.pos.y + SPECIES[a.species].bodyY, a.pos.z), 'blood', 5);
+      this.hud.hitMarker(killed);
+      if (killed) this.onAnimalKill(a);
+      return;
     }
   }
 
@@ -693,8 +736,10 @@ export class Game {
     spread += Math.min(1, p.moveSpeed / 4) * 0.03;
     spread *= 1 - p.skills.marksman * 0.12;
     const muzzle = p.rig.muzzleWorld(new THREE.Vector3());
-    this.vfx.muzzle(muzzle, aimDir);
+    const sling = p.weapon === 'sling';
+    if (!sling) this.vfx.muzzle(muzzle, aimDir);
     const hits = new Map<Enemy, { dmg: number; head: boolean }>();
+    const animalHits = new Map<Animal, number>();
     for (let k = 0; k < gun.pellets; k += 1) {
       const dir = aimDir.clone();
       dir.x += (this.rng() - 0.5) * spread;
@@ -705,6 +750,7 @@ export class Game {
       const end = this.tmpB.copy(origin).addScaledVector(dir, range);
       let hitT = range;
       let hitEnemy: Enemy | null = null;
+      let hitAnimal: Animal | null = null;
       let head = false;
       for (const e of this.enemies) {
         const h = e.hitTest(origin, dir, range);
@@ -714,18 +760,32 @@ export class Game {
           head = h.head;
         }
       }
+      const ah = this.wildlife.hitTest(origin, dir, range);
+      if (ah && ah.t < hitT) {
+        hitT = ah.t;
+        hitAnimal = ah.animal;
+        hitEnemy = null;
+      }
       const tw = this.world.collision.raycast(origin, end, false);
       if (tw >= 0 && tw * range < hitT) {
         hitT = tw * range;
         hitEnemy = null;
+        hitAnimal = null;
       }
       const tt = this.world.terrain.raycastSegment(origin, end, 1);
       if (tt >= 0 && tt * range < hitT) {
         hitT = tt * range;
         hitEnemy = null;
+        hitAnimal = null;
       }
       const hitPoint = origin.clone().addScaledVector(dir, hitT);
-      if (k < 3) this.vfx.tracer(muzzle, hitPoint);
+      if (k < 3 && !sling) this.vfx.tracer(muzzle, hitPoint);
+      if (hitAnimal) {
+        const fall = clamp(1.4 - hitT / range, 0.45, 1);
+        animalHits.set(hitAnimal, (animalHits.get(hitAnimal) ?? 0) + gun.damage * fall * (1 + p.skills.hunter * 0.2) * (1 + p.skills.marksman * 0.12));
+        this.vfx.impact(hitPoint, 'blood', gun.pellets > 1 ? 3 : 6);
+        continue;
+      }
       if (hitEnemy) {
         // damage falls off past half range
         const fall = clamp(1.4 - hitT / range, 0.45, 1);
@@ -742,11 +802,69 @@ export class Game {
       this.hud.hitMarker(killed);
       if (killed) this.onKill(e, false, h.head);
     }
+    for (const [a, dmg] of animalHits) {
+      const killed = this.wildlife.takeHit(a, dmg, p.pos);
+      this.hud.hitMarker(killed);
+      if (killed) this.onAnimalKill(a);
+    }
     this.audio.gunShot(p.weapon);
     this.camRig.addTrauma(gun.trauma);
     this.camRig.punchFov(gun.fov);
     // gunshots carry
     this.broadcastNoise(p.pos, gun.noise, true);
+  }
+
+  private onAnimalKill(a: Animal): void {
+    if (a.counted) return;
+    a.counted = true;
+    this.stats.hunts += 1;
+    const def = SPECIES[a.species];
+    this.giveXp(def.xp, t('xp.hunt', { what: tr(def.name) }));
+  }
+
+  private onAnimalAttack(a: Animal): void {
+    const p = this.player;
+    if (p.dead || this.state !== 'playing') return;
+    p.damage(18, { kind: 'melee', by: SPECIES[a.species].name }, this.gameTime);
+    this.audio.hit(true);
+    this.audio.hurt();
+    this.audio.grunt(1);
+    this.camRig.addTrauma(0.45);
+    this.hud.damageFrom(this.screenAngleTo(a.pos));
+    this.hitstop(0.06);
+  }
+
+  /** Point the single harvest prompt at the nearest tree (axe) or rock (hammer). */
+  private syncHarvest(): void {
+    const p = this.player;
+    const axe = p.upgrades.has('axe');
+    const hammer = p.upgrades.has('hammer');
+    const it = this.harvestIt;
+    it.enabled = false;
+    if (!axe && !hammer) return;
+    let h = this.veg.nearestHarvestable(p.pos.x, p.pos.z, 1.9);
+    if (h && ((h.kind === 'tree' && !axe) || (h.kind === 'rock' && !hammer))) h = null;
+    if (!h) return;
+    this.harvestRef = h;
+    it.enabled = true;
+    it.pos.set(h.x, h.y, h.z);
+    it.radius = (h.kind === 'rock' ? h.scale * 0.8 : 0.4) + 2.0;
+    it.hold = h.kind === 'tree' ? 2.2 : 2.5;
+    const tree = { palm: L('Fell the palm', 'قطع النخلة'), olive: L('Fell the olive tree', 'قطع الزيتونة'), argan: L('Fell the argan tree', 'قطع الأركانة'), rock: L('Quarry the rock', 'هرّس الحجرة') }[h.species];
+    it.prompt = tree;
+  }
+
+  /** Carcasses become searchable when an animal dies; knife speeds skinning. */
+  private syncCarcasses(): void {
+    const hold = this.player.upgrades.has('skinningKnife') ? 0.8 : 1.6;
+    for (const it of this.world.interactables) {
+      if (it.kind !== 'carcass') continue;
+      const a = this.wildlife.animals.find((x) => x.id === it.ref);
+      if (!a) continue;
+      if (a.state === 'dead' && !a.counted) this.onAnimalKill(a);
+      it.enabled = a.state === 'dead' && !a.skinned && a.deadT > 0.4;
+      it.hold = hold;
+    }
   }
 
   private onKill(e: Enemy, silent: boolean, head = false): void {
@@ -852,6 +970,7 @@ export class Game {
 
   private broadcastNoise(at: THREE.Vector3, radius: number, gunshot: boolean): void {
     for (const e of this.enemies) e.hearNoise(at, radius, gunshot);
+    this.wildlife.hearNoise(at, radius);
   }
 
   private onFootstep(loud: number): void {
@@ -860,6 +979,7 @@ export class Game {
       this.vfx.footDust(this.tmpC.copy(this.player.pos).setY(this.player.pos.y + 0.05), loud);
       // sprinting is audible
       for (const e of this.enemies) if (e.alive && e.state !== 'alert' && e.pos.distanceTo(this.player.pos) < 7) e.hearNoise(this.player.pos, 7, false);
+      if (loud >= 1) this.wildlife.hearNoise(this.player.pos, 11);
     }
   }
 
@@ -875,6 +995,7 @@ export class Game {
       this.interactTarget = null;
       return;
     }
+    this.syncHarvest();
     const gate = this.quests.activeGate();
     let best: Interactable | null = null;
     let bestD = Infinity;
@@ -980,6 +1101,49 @@ export class Game {
         this.panelTab = 'craft';
         this.openOverlay('panel');
         break;
+      case 'harvest': {
+        const h = this.harvestRef;
+        if (!h || h.done) break;
+        this.veg.harvest(h);
+        let loot: LootBundle;
+        if (h.kind === 'tree') {
+          const big = h.scale > 1.05 ? 1 : 0;
+          loot = h.species === 'palm' ? { wood: 2 + big, dates: 2 } : { wood: (h.species === 'olive' ? 4 : 3) + big };
+          this.audio.chop();
+          this.vfx.impact(this.tmpA.set(h.x, h.y + 1, h.z), 'dust', 10);
+        } else {
+          // galena lies in the hills around the old lead mine
+          const nearMine = Math.hypot(h.x - 196, h.z + 38) < 70;
+          const ore = this.rng() < (nearMine ? 0.85 : 0.3) ? 1 + (nearMine && this.rng() < 0.5 ? 1 : 0) : 0;
+          loot = { stone: 2 + Math.round(h.scale), ...(ore ? { ore } : {}) };
+          this.audio.quarry();
+          this.vfx.impact(this.tmpA.set(h.x, h.y + h.scale * 0.6, h.z), 'spark', 8);
+          this.vfx.impact(this.tmpA.set(h.x, h.y + h.scale * 0.4, h.z), 'dust', 8);
+        }
+        this.addItems(this.scavenge(loot));
+        this.broadcastNoise(p.pos, 14, false);
+        this.giveXp(3, t(h.kind === 'tree' ? 'xp.fell' : 'xp.quarry'));
+        this.harvestRef = null;
+        break;
+      }
+      case 'carcass': {
+        const a = this.wildlife.animals.find((x) => x.id === it.ref);
+        if (!a || a.skinned) break;
+        const def = SPECIES[a.species];
+        const loot: LootBundle = { ...def.yield };
+        if (p.upgrades.has('skinningKnife')) {
+          loot.hide = (loot.hide ?? 0) + 1;
+          loot.rawMeat = (loot.rawMeat ?? 0) + 1;
+        }
+        loot.rawMeat = (loot.rawMeat ?? 0) + Math.floor(p.skills.hunter / 2);
+        this.wildlife.skin(a, this.gameTime);
+        it.enabled = false;
+        this.addItems(loot);
+        this.audio.bandage();
+        this.hud.toast(t('msg.skinned', { what: tr(def.name) }), 'good');
+        this.giveXp(5, t('xp.skin'));
+        break;
+      }
       case 'leaflet':
         if (p.inventory.leaflet <= 0) {
           this.hud.toast(t('msg.noLeaflets'), 'bad');
@@ -1136,16 +1300,19 @@ export class Game {
       p.inventory.water -= 1;
       p.thirst = Math.min(100, p.thirst + 35);
       this.audio.drink();
-    } else if (id === 'bread' || id === 'dates') {
+    } else if (id === 'bread' || id === 'dates' || id === 'cookedMeat' || id === 'rawMeat') {
       if (p.inventory[id] <= 0) {
-        const other = id === 'bread' ? 'dates' : 'bread';
-        if (p.inventory[other] > 0) return this.useItem(other);
+        // F eats the best food in the satchel
+        const other = (['cookedMeat', 'bread', 'dates', 'rawMeat'] as const).find((f) => p.inventory[f] > 0);
+        if (other) return this.useItem(other);
         return void this.hud.toast(t('msg.noFood'), 'bad');
       }
       if (p.hunger > 97) return;
       p.inventory[id] -= 1;
-      p.hunger = Math.min(100, p.hunger + (id === 'bread' ? 40 : 18) * (1 + p.skills.survivalist * 0.1));
+      const food = { bread: 40, dates: 18, cookedMeat: 50, rawMeat: 15 }[id];
+      p.hunger = Math.min(100, p.hunger + food * (1 + p.skills.survivalist * 0.1));
       if (id === 'dates') p.thirst = Math.min(100, p.thirst + 6);
+      if (id === 'rawMeat') p.thirst = Math.max(0, p.thirst - 4);
       this.audio.eat();
     } else if (id === 'herbs') {
       if (p.inventory.herbs <= 0) {
@@ -1442,6 +1609,7 @@ export class Game {
       [this.daysPassed + 1, t('victory.days')],
       [this.stats.kills, t('victory.kills')],
       [this.stats.takedowns, t('victory.takedowns')],
+      [this.stats.hunts, t('victory.hunts')],
       [`${found}/${this.world.landmarks.length}`, t('victory.places')],
       [this.player.level, t('victory.level')],
     ]
@@ -1475,7 +1643,7 @@ export class Game {
       weaponName: tr(WEAPONS[p.weapon].name),
       slots: WEAPON_ORDER.map((w) => ({ slot: WEAPONS[w].slot, owned: p.owned.has(w), active: p.weapon === w })),
       clip: p.clip,
-      reserve: p.gun ? p.inventory[p.gun.ammo] : 0,
+      reserve: p.gun ? (p.gun.infinite ? -1 : p.inventory[p.gun.ammo]) : 0,
       water: p.inventory.water,
       food: p.inventory.bread + p.inventory.dates,
       herbs: p.inventory.herbs,
@@ -1678,6 +1846,24 @@ export class Game {
       },
       grantWeapon: (w: string) => this.grantWeapon(w as WeaponId),
       landmarks: () => this.world.landmarks.map((l) => ({ id: l.id, x: l.x, z: l.z })),
+      harvestables: (kind: string) =>
+        this.veg.harvestables
+          .filter((h) => !h.done && h.kind === kind)
+          .map((h) => ({ id: h.id, x: h.x, z: h.z, scale: h.scale }))
+          .sort((a, b) => Math.hypot(a.x - this.player.pos.x, a.z - this.player.pos.z) - Math.hypot(b.x - this.player.pos.x, b.z - this.player.pos.z))
+          .slice(0, 5),
+      animals: () => this.wildlife.animals.map((a) => ({ id: a.id, species: a.species, x: a.pos.x, y: a.pos.y + SPECIES[a.species].bodyY, z: a.pos.z, alive: a.state !== 'dead', skinned: a.skinned })),
+      aimAt: (x: number, y: number, z: number) => {
+        // point the camera ray at a world point (stands in for mouse aim)
+        for (let k = 0; k < 3; k += 1) {
+          const c = this.camera.position;
+          const d = this.tmpA.set(x - c.x, y - c.y, z - c.z).normalize();
+          this.camRig.yaw = Math.atan2(-d.x, -d.z);
+          this.camRig.pitch = -Math.asin(d.y);
+          this.camRig.update(0.016, this.player.pos, this.player.crouchAmt, this.player.aimAmt, false, this.world.collision, this.world.terrain);
+          this.camRig.snap();
+        }
+      },
       setLang: (l: string) => setLang(l as Lang),
       stress: (n: number) => {
         // load test: alert every guard near the player and fill the sky with gunfire
@@ -1744,6 +1930,8 @@ export class Game {
         fogRevealed: this.fog.reduce((a, v) => a + v, 0) / this.fog.length,
         skills: { ...p.skills },
         lang: lang(),
+        animalsAlive: this.wildlife.alive,
+        hunts: this.stats.hunts,
         song: this.audio.currentSong,
         quality: this.pipeline.quality,
         software: this.software,

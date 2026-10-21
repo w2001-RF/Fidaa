@@ -133,8 +133,8 @@ export class Hud {
     }
     if (s.weapon !== 'blade') {
       this.ammoClip.textContent = String(s.clip);
-      this.ammoReserve.textContent = `/ ${s.reserve}`;
-      this.ammo.classList.toggle('low', s.clip === 0);
+      this.ammoReserve.textContent = s.reserve < 0 ? '/ ∞' : `/ ${s.reserve}`;
+      this.ammo.classList.toggle('low', s.clip === 0 && s.reserve === 0);
     } else {
       this.ammoClip.textContent = '∞';
       this.ammoReserve.textContent = t('weapon.silent');

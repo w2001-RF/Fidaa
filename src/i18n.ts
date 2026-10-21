@@ -103,6 +103,7 @@ export const STRINGS = {
   'ctl.aim': L('aim', 'نيشان'),
   'ctl.weapons': L('weapons', 'السلاح'),
   'ctl.craft': L('crafting', 'الصنعة'),
+  'ctl.hunt': L('hunt game, skin with E', 'صيد، وسلخ بـE'),
   'ctl.reload': L('reload', 'عمّر'),
   'ctl.interact': L('interact / takedown', 'تفاعل / طيّح بلا حس'),
   'ctl.consume': L('drink · eat · herbs', 'شرب · كول · عشوب'),
@@ -168,6 +169,7 @@ export const STRINGS = {
   'victory.kills': L('enemies fallen', 'أعداء طاحو'),
   'victory.takedowns': L('silent takedowns', 'تطييحات بلا حس'),
   'victory.level': L('level', 'المستوى'),
+  'victory.hunts': L('animals hunted', 'حيوانات تصيّدو'),
   'victory.places': L('places discovered', 'بلايص كتشفتيهم'),
 
   // ---- panel / map
@@ -227,6 +229,12 @@ export const STRINGS = {
   // ---- messages
   'msg.start': L('Talk to Lalla Zahra in the douar.', 'هضر مع للا زهرة فالدوار.'),
   'msg.noAmmo': L('No ammunition left', 'ما بقا قرطاس'),
+  'msg.skinned': L('You skin the {what}.', 'سلختي {what}.'),
+  'msg.boarCharge': L('A boar charges!', 'الحلوف هاجم!'),
+  'xp.hunt': L('Hunted: {what}', 'صيد: {what}'),
+  'xp.skin': L('Skinning', 'السلخ'),
+  'xp.fell': L('Woodcutting', 'الحطّابة'),
+  'xp.quarry': L('Quarrying', 'قلع الحجر'),
   'msg.noWeapon': L('You do not have the {w} yet', 'باقي ما عندكش {w}'),
   'msg.spotted': L('Spotted by a {who}!', 'شافك {who}!'),
   'msg.alarm': L(' The alarm spreads.', ' التصفار تفرّق على صحابو.'),

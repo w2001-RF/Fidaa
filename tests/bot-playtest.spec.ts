@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { writeFileSync, mkdirSync } from 'node:fs';
+import { wait, waitForGame } from './helpers';
 
 // Bot playtest: drives the game with real keyboard / click input. The only
 // helpers are lookAt() (stands in for mouse-look, which needs pointer lock)
@@ -10,7 +11,7 @@ type Game = { state: string; mission: string; step: number; dead: boolean; kills
 const game = (page: Page) => page.evaluate(() => window.__THREE_GAME_DIAGNOSTICS__?.game as unknown as Game);
 const ppos = (page: Page) => page.evaluate(() => window.__THREE_GAME_DIAGNOSTICS__?.player.position ?? { x: 0, y: 0, z: 0 });
 
-async function walkTo(page: Page, target: string, within = 1.8, timeoutMs = 25_000): Promise<{ ok: boolean; travelled: number; softlocks: number }> {
+async function walkTo(page: Page, target: string, within = 1.8, timeoutMs = process.env.CI ? 70_000 : 25_000): Promise<{ ok: boolean; travelled: number; softlocks: number }> {
   const start = Date.now();
   let travelled = 0;
   let softlocks = 0;
@@ -24,7 +25,7 @@ async function walkTo(page: Page, target: string, within = 1.8, timeoutMs = 25_0
       const d = Math.hypot(t.x - p.x, t.z - p.z);
       if (d < within) return { ok: true, travelled, softlocks };
       await page.evaluate(([x, z]) => window.__THREE_GAME_TEST_HOOKS__?.lookAt?.(x, z), [t.x, t.z]);
-      await page.waitForTimeout(150);
+      await wait(page, 150);
       const now = await ppos(page);
       const step = Math.hypot(now.x - last.x, now.z - last.z);
       travelled += step;
@@ -32,7 +33,7 @@ async function walkTo(page: Page, target: string, within = 1.8, timeoutMs = 25_0
         // stuck on geometry: side-step
         softlocks += 1;
         await page.keyboard.down('KeyD');
-        await page.waitForTimeout(450);
+        await wait(page, 450);
         await page.keyboard.up('KeyD');
       }
       last = now;
@@ -46,7 +47,7 @@ async function walkTo(page: Page, target: string, within = 1.8, timeoutMs = 25_0
 async function talkThrough(page: Page): Promise<void> {
   await page.keyboard.press('KeyE');
   for (let i = 0; i < 6; i += 1) {
-    await page.waitForTimeout(250);
+    await wait(page, 250);
     if ((await game(page)).state !== 'dialogue') return;
     await page.keyboard.press('KeyE');
   }
@@ -54,13 +55,13 @@ async function talkThrough(page: Page): Promise<void> {
 
 async function holdE(page: Page, ms: number): Promise<void> {
   await page.keyboard.down('KeyE');
-  await page.waitForTimeout(ms);
+  await wait(page, ms);
   await page.keyboard.up('KeyE');
-  await page.waitForTimeout(150);
+  await wait(page, 150);
 }
 
 test('bot playtest: missions progress, takedown, death and retry', async ({ page }) => {
-  test.setTimeout(240_000);
+  test.setTimeout(process.env.CI ? 600_000 : 240_000);
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => {
@@ -72,6 +73,7 @@ test('bot playtest: missions progress, takedown, death and retry', async ({ page
   await page.waitForFunction(() => (window.__THREE_GAME_DIAGNOSTICS__?.frame ?? 0) > 10, null, { timeout: 60_000 });
   await page.evaluate(() => window.__THREE_GAME_TEST_HOOKS__?.seed(12345));
   await page.click('#btn-start');
+  await wait(page, 100);
   expect((await game(page)).state).toBe('playing');
 
   // ---- Mission 1: Bread and Water (all real input)
@@ -108,7 +110,7 @@ test('bot playtest: missions progress, takedown, death and retry', async ({ page
   // ---- Survival verbs: eat & drink keys change meters
   const hungerBefore = await page.evaluate(() => (window.__THREE_GAME_DIAGNOSTICS__?.game as { hunger: number }).hunger);
   await page.keyboard.press('KeyF');
-  await page.waitForTimeout(200);
+  await wait(page, 200);
   const hungerAfter = await page.evaluate(() => (window.__THREE_GAME_DIAGNOSTICS__?.game as { hunger: number }).hunger);
   expect(hungerAfter).toBeGreaterThan(hungerBefore);
 
@@ -117,11 +119,11 @@ test('bot playtest: missions progress, takedown, death and retry', async ({ page
   const guard = await page.evaluate(() => window.__THREE_GAME_TEST_HOOKS__?.targets?.()['enemy:k-gate1']);
   if (!guard) throw new Error('guard missing');
   await page.evaluate(([x, z]) => window.__THREE_GAME_TEST_HOOKS__?.teleport?.(x, z), [guard.x + 2.6, guard.z]);
-  await page.waitForTimeout(300);
+  await wait(page, 300);
   const killsBefore = (await game(page)).kills;
   await go('enemy:k-gate1', 1.5);
   await page.keyboard.press('KeyE');
-  await page.waitForTimeout(400);
+  await wait(page, 400);
   const afterTakedown = await game(page);
   expect(afterTakedown.kills).toBe(killsBefore + 1);
   metrics.takedownAlert = afterTakedown.alert;
@@ -129,11 +131,12 @@ test('bot playtest: missions progress, takedown, death and retry', async ({ page
   // ---- Fail state: stand in the open before the garrison in daylight
   await page.evaluate(() => window.__THREE_GAME_TEST_HOOKS__?.setState('combat'));
   const t0 = Date.now();
-  await page.waitForFunction(() => (window.__THREE_GAME_DIAGNOSTICS__?.game as { dead: boolean } | undefined)?.dead === true, null, { timeout: 60_000 });
+  await waitForGame(page, 'window.__THREE_GAME_DIAGNOSTICS__?.game?.dead === true', 60_000);
   metrics.secondsToDeathUnderFire = (Date.now() - t0) / 1000;
+  await wait(page, 2000);
   await expect(page.locator('#death-screen')).toBeVisible({ timeout: 5000 });
   await page.click('#btn-retry');
-  await page.waitForTimeout(400);
+  await wait(page, 400);
   const revived = await game(page);
   expect(revived.dead).toBe(false);
   expect(revived.state).toBe('playing');

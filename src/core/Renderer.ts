@@ -22,6 +22,16 @@ export function createRenderer(canvas: HTMLCanvasElement): THREE.WebGLRenderer {
   return renderer;
 }
 
+/** True when WebGL runs on a CPU rasteriser (CI machines, blocklisted GPUs). */
+export function isSoftwareRenderer(renderer: THREE.WebGLRenderer): boolean {
+  const gl = renderer.getContext();
+  const ext = gl.getExtension('WEBGL_debug_renderer_info');
+  const name = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+  return /swiftshader|llvmpipe|software|basic render/i.test(name);
+}
+
+export type Quality = 'high' | 'medium' | 'low';
+
 /** Warm film grade + vignette in one pass (keeps the post budget at 2 passes). */
 const GradeShader = {
   uniforms: {
@@ -50,6 +60,7 @@ export class RenderPipeline {
   readonly bloom: UnrealBloomPass;
   readonly grade: ShaderPass;
   maxDpr = 1.75;
+  quality: Quality = 'high';
 
   constructor(
     readonly renderer: THREE.WebGLRenderer,
@@ -63,6 +74,13 @@ export class RenderPipeline {
     this.grade = new ShaderPass(GradeShader);
     this.composer.addPass(this.grade);
     this.composer.addPass(new OutputPass());
+  }
+
+  /** Resolution scale and bloom per preset; the next resize() applies the new DPR. */
+  setQuality(q: Quality): void {
+    this.quality = q;
+    this.maxDpr = q === 'high' ? 1.75 : q === 'medium' ? 1.25 : 0.75;
+    this.bloom.enabled = q !== 'low';
   }
 
   resize(): boolean {

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { wait } from './helpers';
 
 // Completability: the whole mission chain can be finished. Teleport skips the
 // long walks; every objective is still performed with real key presses.
@@ -11,18 +12,18 @@ const tp = (p: Page, x: number, z: number) => p.evaluate(([a, b]) => window.__TH
 
 async function holdE(p: Page, ms: number) {
   await p.keyboard.down('KeyE');
-  await p.waitForTimeout(ms);
+  await wait(p, ms);
   await p.keyboard.up('KeyE');
-  await p.waitForTimeout(200);
+  await wait(p, 200);
 }
 async function talk(p: Page, npc: string) {
   const t = await target(p, `npc:${npc}`);
   if (!t) throw new Error(npc);
   await tp(p, t.x + 1.2, t.z + 0.6);
-  await p.waitForTimeout(250);
+  await wait(p, 250);
   await p.keyboard.press('KeyE');
   for (let i = 0; i < 6; i += 1) {
-    await p.waitForTimeout(220);
+    await wait(p, 220);
     if ((await game(p)).state !== 'dialogue') break;
     await p.keyboard.press('KeyE');
   }
@@ -31,17 +32,18 @@ async function doAt(p: Page, id: string, ms: number) {
   const t = await target(p, id);
   if (!t) throw new Error(id);
   await tp(p, t.x, t.z);
-  await p.waitForTimeout(250);
+  await wait(p, 250);
   await holdE(p, ms);
 }
 
 test('campaign: all five missions can be completed to victory', async ({ page }) => {
-  test.setTimeout(240_000);
+  test.setTimeout(process.env.CI ? 600_000 : 240_000);
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('/');
   await page.waitForFunction(() => (window.__THREE_GAME_DIAGNOSTICS__?.frame ?? 0) > 10, null, { timeout: 60_000 });
   await page.click('#btn-start');
+  await wait(page, 100);
   await page.evaluate(() => window.__THREE_GAME_TEST_HOOKS__?.setHour?.(23));
   await page.keyboard.press('KeyC'); // sneak
 
@@ -69,9 +71,9 @@ test('campaign: all five missions can be completed to victory', async ({ page })
   const k = await target(page, 'enemy:k-khalifa');
   if (!k || k.yaw === undefined) throw new Error('khalifa');
   await tp(page, k.x - Math.sin(k.yaw) * 1.3, k.z - Math.cos(k.yaw) * 1.3);
-  await page.waitForTimeout(120);
+  await wait(page, 120);
   await page.keyboard.press('KeyE');
-  await page.waitForTimeout(500);
+  await wait(page, 500);
   expect((await target(page, 'enemy:k-khalifa'))?.alive).toBe(0);
   await doAt(page, 'body-k-khalifa', 1100);
   expect((await game(page)).inventory.key).toBe(1);
@@ -87,6 +89,7 @@ test('campaign: all five missions can be completed to victory', async ({ page })
   const h = await target(page, 'hideout');
   if (!h) throw new Error('hideout');
   await tp(page, h.x + 12, h.z + 4);
+  await wait(page, 4500);
   await expect(page.locator('#victory-screen')).toBeVisible({ timeout: 8000 });
   expect((await game(page)).mission).toBe('done');
   expect(errors).toEqual([]);

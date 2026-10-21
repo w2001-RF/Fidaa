@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { PNG } from 'pngjs';
+import { wait } from './helpers';
 
 async function canvasVariety(page: import('@playwright/test').Page): Promise<{ variance: number; buckets: number }> {
   const png = PNG.sync.read(await page.locator('#game-canvas').screenshot());
@@ -30,6 +31,7 @@ test('title → begin → the fidāʾī walks through the douar', async ({ page 
   await page.waitForFunction(() => (window.__THREE_GAME_DIAGNOSTICS__?.frame ?? 0) > 10, null, { timeout: 60_000 });
   await expect(page.locator('#title-screen')).toBeVisible();
   await page.click('#btn-start');
+  await wait(page, 100);
   await expect(page.locator('#hud')).toBeVisible();
 
   const v = await canvasVariety(page);
@@ -39,7 +41,7 @@ test('title → begin → the fidāʾī walks through the douar', async ({ page 
   const pos = () => page.evaluate(() => window.__THREE_GAME_DIAGNOSTICS__?.player.position ?? { x: 0, y: 0, z: 0 });
   const before = await pos();
   await page.keyboard.down('KeyW');
-  await page.waitForTimeout(900);
+  await wait(page, 900);
   await page.keyboard.up('KeyW');
   const after = await pos();
   expect(Math.hypot(after.x - before.x, after.z - before.z)).toBeGreaterThan(1.5);

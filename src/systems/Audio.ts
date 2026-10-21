@@ -35,6 +35,13 @@ type Song = {
 
 export type SongId = 'tifawt' | 'gnawa' | 'nights' | 'hunted' | 'victory';
 
+/**
+ * Optional generated audio (scripts/generate-audio.sh → public/audio/). Any
+ * entry present replaces its procedural counterpart; a missing manifest or
+ * file leaves the synthesized version in place.
+ */
+type AudioManifest = { music?: Partial<Record<SongId, string>>; sfx?: Record<string, string> };
+
 /** Original compositions: short loops in Moroccan modes and rhythms. */
 const SONGS: Record<SongId, Song> = {
   // "Tifawt": oud melody in Hijaz over the 3+3+2 bendir rhythm of the douar
@@ -181,6 +188,8 @@ export class AudioSystem {
   private dayAlt = 0;
   private victoryUntil = 0;
   private lastBark = 0;
+  private readonly files = new Map<string, AudioBuffer>();
+  private fileSource: AudioBufferSourceNode | null = null;
 
   get currentSong(): SongId | null {
     return this.song;
@@ -235,6 +244,50 @@ export class AudioSystem {
     src.connect(this.windFilter).connect(this.windGain).connect(this.amb);
     src.start();
     await ctx.resume();
+    void this.loadManifest();
+  }
+
+  private async loadManifest(): Promise<void> {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    let manifest: AudioManifest;
+    try {
+      const res = await fetch('audio/manifest.json', { cache: 'no-cache' });
+      if (!res.ok) return;
+      manifest = (await res.json()) as AudioManifest;
+    } catch {
+      return; // no generated audio: procedural only
+    }
+    const entries = [
+      ...Object.entries(manifest.music ?? {}).map(([k, v]) => [`music:${k}`, v] as const),
+      ...Object.entries(manifest.sfx ?? {}).map(([k, v]) => [`sfx:${k}`, v] as const),
+    ];
+    await Promise.all(
+      entries.map(async ([id, url]) => {
+        if (!url) return;
+        try {
+          const data = await fetch(`audio/${url}`).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))));
+          this.files.set(id, await ctx.decodeAudioData(data));
+        } catch {
+          // a broken file falls back to the procedural sound
+        }
+      }),
+    );
+  }
+
+  /** Play a generated effect if one was loaded; false lets the caller synthesize it. */
+  private playFile(id: string, volume = 1): boolean {
+    const buf = this.files.get(`sfx:${id}`);
+    if (!buf || !this.ready()) return false;
+    const ctx = this.ctx as AudioContext;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.playbackRate.value = 0.96 + this.rng() * 0.08;
+    const g = ctx.createGain();
+    g.gain.value = volume;
+    src.connect(g).connect(this.sfx);
+    src.start();
+    return true;
   }
 
   setMuted(m: boolean): void {
@@ -309,7 +362,7 @@ export class AudioSystem {
       this.pending = null;
       this.beginSong(next, t + 0.05);
     }
-    if (!this.song || this.pending) return;
+    if (!this.song || this.pending || this.fileSource) return;
     const s = SONGS[this.song];
     // lead melody
     while (this.melT < t + 0.25) {
@@ -364,6 +417,18 @@ export class AudioSystem {
     this.droneGain?.gain.setTargetAtTime(0.0001, at, 0.2);
     this.droneNodes = [];
     this.droneGain = null;
+    this.fileSource?.stop(at + 0.6);
+    this.fileSource = null;
+    const file = this.files.get(`music:${id}`);
+    if (file) {
+      const src = ctx.createBufferSource();
+      src.buffer = file;
+      src.loop = id !== 'victory';
+      src.connect(this.musicBus);
+      src.start(at);
+      this.fileSource = src;
+      return;
+    }
     const s = SONGS[id];
     if (s.drone) {
       const g = ctx.createGain();
@@ -612,7 +677,7 @@ export class AudioSystem {
 
   /** The player's own weapon report, by gun. */
   gunShot(weapon: string): void {
-    if (!this.ready()) return;
+    if (!this.ready() || this.playFile(`shot-${weapon}`)) return;
     const t = this.now();
     if (weapon === 'pistol') {
       this.rifleShot(0, 0, true);
@@ -632,7 +697,7 @@ export class AudioSystem {
   }
 
   craft(): void {
-    if (!this.ready()) return;
+    if (!this.ready() || this.playFile('craft')) return;
     const t = this.now();
     for (let i = 0; i < 4; i += 1) {
       this.tone(520 + this.rng() * 260, 0.09, 0.12, 'square', t + i * 0.16, this.sfx, 0.6);
@@ -648,7 +713,7 @@ export class AudioSystem {
   }
 
   discover(): void {
-    if (!this.ready()) return;
+    if (!this.ready() || this.playFile('discover')) return;
     const t = this.now();
     [0, 2, 4, 7, 9].forEach((d, i) => this.oud(BAYATI[d], t + i * 0.14, 0.5));
     this.ney(BAYATI[7], t + 0.75, 1.4, 0.12);

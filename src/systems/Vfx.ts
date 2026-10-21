@@ -6,7 +6,9 @@ type VfxKind = 'dust' | 'blood' | 'spark' | 'smoke' | 'glint';
 const rand = createSeededRandom(4242);
 
 type Particle = {
-  mesh: THREE.Mesh;
+  kind: VfxKind;
+  pos: THREE.Vector3;
+  rot: number;
   vel: THREE.Vector3;
   life: number;
   maxLife: number;
@@ -18,9 +20,13 @@ type Particle = {
 
 type Tracer = { line: THREE.Mesh; life: number; active: boolean };
 
+const CAPACITY: Record<VfxKind, number> = { dust: 90, blood: 60, spark: 48, smoke: 60, glint: 24 };
+const KINDS: VfxKind[] = ['dust', 'blood', 'spark', 'smoke', 'glint'];
+
 /**
  * Pooled, event-driven VFX: muzzle flash + light, tracers, dust & blood puffs,
- * sparks for sabotage, pickup glints, objective beacon.
+ * sparks for sabotage, pickup glints, objective beacon. Particles of one kind
+ * share an InstancedMesh, so a firefight costs five draw calls, not hundreds.
  */
 export class Vfx {
   readonly group = new THREE.Group();
@@ -32,6 +38,8 @@ export class Vfx {
   private readonly puffGeo = new THREE.IcosahedronGeometry(0.18, 0);
   private readonly sparkGeo = new THREE.BoxGeometry(0.04, 0.04, 0.16);
   private readonly mats: Record<VfxKind, THREE.MeshBasicMaterial>;
+  private readonly batches = {} as Record<VfxKind, THREE.InstancedMesh>;
+  private readonly dummy = new THREE.Object3D();
   readonly beacon: THREE.Group;
   private readonly beaconMat: THREE.MeshBasicMaterial;
 
@@ -46,12 +54,18 @@ export class Vfx {
       smoke: m('#d9d4cc', 0.35),
       glint: m('#fff0b0', 0.9, true),
     };
-    for (let i = 0; i < 120; i += 1) {
-      const mesh = new THREE.Mesh(this.puffGeo, this.mats.dust);
-      mesh.visible = false;
-      mesh.frustumCulled = false;
-      this.group.add(mesh);
-      this.particles.push({ mesh, vel: new THREE.Vector3(), life: 0, maxLife: 1, grow: 1, gravity: 0, active: false, baseScale: 1 });
+    for (const kind of KINDS) {
+      const geo = kind === 'spark' || kind === 'glint' ? this.sparkGeo : this.puffGeo;
+      const batch = new THREE.InstancedMesh(geo, this.mats[kind], CAPACITY[kind]);
+      batch.count = 0;
+      batch.frustumCulled = false;
+      batch.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      batch.name = `vfx-${kind}`;
+      this.batches[kind] = batch;
+      this.group.add(batch);
+      for (let i = 0; i < CAPACITY[kind]; i += 1) {
+        this.particles.push({ kind, pos: new THREE.Vector3(), rot: 0, vel: new THREE.Vector3(), life: 0, maxLife: 1, grow: 1, gravity: 0, active: false, baseScale: 1 });
+      }
     }
     const tracerGeo = new THREE.CylinderGeometry(0.012, 0.012, 1, 4, 1, true);
     tracerGeo.translate(0, 0.5, 0);
@@ -139,22 +153,34 @@ export class Vfx {
     this.flashLight.intensity = this.flashT > 0 ? 40 : 0;
     (this.flashSprite.material as THREE.MeshBasicMaterial).opacity = this.flashT > 0 ? 0.9 : 0;
     this.flashSprite.scale.setScalar(1 + rand() * 0.6);
+    for (const kind of KINDS) this.batches[kind].count = 0;
+    const d = this.dummy;
     for (const p of this.particles) {
       if (!p.active) continue;
       p.life -= dt;
       if (p.life <= 0) {
         p.active = false;
-        p.mesh.visible = false;
         continue;
       }
       p.vel.y -= p.gravity * dt;
       p.vel.multiplyScalar(1 - dt * 1.5);
-      p.mesh.position.addScaledVector(p.vel, dt);
+      p.pos.addScaledVector(p.vel, dt);
       const k = 1 - p.life / p.maxLife;
-      p.mesh.scale.setScalar(p.baseScale * (1 + k * p.grow));
-      if (p.mesh.material !== this.mats.spark && p.mesh.material !== this.mats.glint) p.mesh.rotation.x += dt;
-      else p.mesh.lookAt(p.mesh.position.x + p.vel.x, p.mesh.position.y + p.vel.y, p.mesh.position.z + p.vel.z);
+      d.position.copy(p.pos);
+      d.scale.setScalar(p.baseScale * (1 + k * p.grow));
+      if (p.kind === 'spark' || p.kind === 'glint') {
+        d.rotation.set(0, 0, 0);
+        d.lookAt(p.pos.x + p.vel.x, p.pos.y + p.vel.y, p.pos.z + p.vel.z);
+      } else {
+        p.rot += dt;
+        d.rotation.set(p.rot, 0, 0);
+      }
+      d.updateMatrix();
+      const batch = this.batches[p.kind];
+      batch.setMatrixAt(batch.count, d.matrix);
+      batch.count += 1;
     }
+    for (const kind of KINDS) if (this.batches[kind].count > 0) this.batches[kind].instanceMatrix.needsUpdate = true;
     for (const t of this.tracers) {
       if (!t.active) continue;
       t.life -= dt;
@@ -171,19 +197,16 @@ export class Vfx {
   }
 
   private spawn(kind: VfxKind, at: THREE.Vector3, vel: THREE.Vector3, life: number, grow: number, gravity: number, scale: number): void {
-    const p = this.particles.find((x) => !x.active);
+    const p = this.particles.find((x) => !x.active && x.kind === kind);
     if (!p) return;
     p.active = true;
-    p.mesh.visible = true;
-    p.mesh.material = this.mats[kind];
-    p.mesh.geometry = kind === 'spark' || kind === 'glint' ? this.sparkGeo : this.puffGeo;
-    p.mesh.position.copy(at);
+    p.pos.copy(at);
+    p.rot = rand() * 6;
     p.vel.copy(vel);
     p.life = life;
     p.maxLife = life;
     p.grow = grow;
     p.gravity = gravity;
     p.baseScale = scale;
-    p.mesh.scale.setScalar(scale);
   }
 }

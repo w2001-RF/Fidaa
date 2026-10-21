@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Input } from '../core/Input';
 import { Loop } from '../core/Loop';
-import { RenderPipeline, createRenderer } from '../core/Renderer';
+import { RenderPipeline, createRenderer, isSoftwareRenderer, type Quality } from '../core/Renderer';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { MaterialLibrary } from '../assets/Materials';
 import { Enemy, type EnemyContext, type ShotRequest } from '../entities/Enemy';
@@ -87,6 +87,7 @@ export class Game {
   private readonly discovered = new Set<string>();
   readonly fog = new Uint8Array(FOG_N * FOG_N);
   private exploreT = 0;
+  private readonly software: boolean;
   private autoFireT = 0;
 
   private readonly tmpA = new THREE.Vector3();
@@ -101,6 +102,11 @@ export class Game {
     this.lib = parts.lib;
     this.renderer = createRenderer(canvas);
     this.pipeline = new RenderPipeline(this.renderer, this.scene, this.camera);
+    this.software = isSoftwareRenderer(this.renderer);
+    // CPU rasterisers (CI runners, blocklisted GPUs): drop the shadow pass before anything compiles
+    if (this.software) this.renderer.shadowMap.enabled = false;
+    this.pipeline.setQuality(this.loadQuality() ?? (this.software ? 'low' : 'high'));
+    if (this.software) this.pipeline.maxDpr = 0.5;
     this.input = new Input(canvas);
     this.camRig = new CameraRig(this.camera);
 
@@ -173,6 +179,7 @@ export class Game {
     this.revealFog(this.world.hideout.x, this.world.hideout.z, 70);
     this.audio.voiceLang = lang();
     this.bindUi();
+    this.refreshQualityLabel();
     this.loop = new Loop(
       (dt, t) => this.update(dt, t),
       () => this.pipeline.render(),
@@ -219,6 +226,17 @@ export class Game {
       this.resume();
     });
     on('#btn-close-panel', () => this.closeOverlay());
+    on('#btn-quality', () => {
+      const order: Quality[] = ['high', 'medium', 'low'];
+      const next = order[(order.indexOf(this.pipeline.quality) + 1) % order.length];
+      this.pipeline.setQuality(next);
+      try {
+        window.localStorage.setItem('fidai-quality', next);
+      } catch {
+        // not persisted
+      }
+      this.refreshQualityLabel();
+    });
     on('#btn-mute', () => {
       this.audio.setMuted(!this.audio.muted);
       this.refreshMuteLabel();
@@ -266,6 +284,20 @@ export class Game {
     });
   }
 
+  private loadQuality(): Quality | null {
+    try {
+      const q = window.localStorage.getItem('fidai-quality');
+      return q === 'high' || q === 'medium' || q === 'low' ? q : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private refreshQualityLabel(): void {
+    const b = document.querySelector('#btn-quality');
+    if (b) b.textContent = t('pause.quality', { q: t(`quality.${this.pipeline.quality}`) });
+  }
+
   private refreshMuteLabel(): void {
     const b = document.querySelector('#btn-mute');
     if (b) b.textContent = t(this.audio.muted ? 'pause.soundOff' : 'pause.soundOn');
@@ -295,6 +327,7 @@ export class Game {
   /** Re-render everything that holds translated text. */
   private onLanguageChanged(): void {
     this.refreshMuteLabel();
+    this.refreshQualityLabel();
     this.refreshFullscreenLabel();
     this.audio.voiceLang = lang();
     if (this.state === 'panel') this.renderPanel();
@@ -1635,6 +1668,11 @@ export class Game {
         this.player.pos.set(x, this.world.terrain.getHeight(x, z), z);
         this.camRig.snap();
       },
+      step: (seconds: number) => {
+        // fixed-step simulation without rendering: lets slow (CPU-rendered) CI runs advance game time
+        const n = Math.max(1, Math.round(seconds / 0.05));
+        for (let i = 0; i < n; i += 1) this.update(0.05, this.elapsed + 0.05);
+      },
       give: (items: Record<string, number>) => {
         for (const [k, v] of Object.entries(items)) if (k in this.player.inventory) this.player.inventory[k as ItemId] += v;
       },
@@ -1706,6 +1744,9 @@ export class Game {
         fogRevealed: this.fog.reduce((a, v) => a + v, 0) / this.fog.length,
         skills: { ...p.skills },
         lang: lang(),
+        song: this.audio.currentSong,
+        quality: this.pipeline.quality,
+        software: this.software,
       },
     };
   }

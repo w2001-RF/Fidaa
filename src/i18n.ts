@@ -219,6 +219,10 @@ export const STRINGS = {
   'ui.fullscreenExit': L('Exit fullscreen', 'خرج من الشاشة كاملة'),
   'pause.voice': L('Voices', 'الأصوات'),
   'pause.music': L('Music', 'الموسيقى'),
+  'pause.quality': L('Graphics: {q}', 'الكرافيك: {q}'),
+  'quality.high': L('high', 'عالي'),
+  'quality.medium': L('medium', 'متوسط'),
+  'quality.low': L('low', 'خفيف'),
 
   // ---- messages
   'msg.start': L('Talk to Lalla Zahra in the douar.', 'هضر مع للا زهرة فالدوار.'),

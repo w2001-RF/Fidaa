@@ -199,6 +199,35 @@ export const MISSIONS: Mission[] = [
       },
     ],
   },
+  {
+    id: 'flight',
+    title: L('Wings over Tadwart', 'جناحات فوق تادوارت'),
+    brief: L(
+      "The garrison's liaison plane carries the Résidence's orders between the posts. Steal it, rain the Manifesto down on the medina from the sky, and bring it down near the douar.",
+      'الطيارة ديال العسكر كتهز الأوامر بين المراكز. سرقها، طيّح الوثيقة على المدينة من السما، ونزّلها حدا الدوار.',
+    ),
+    reward: { xp: 300, items: {} },
+    steps: [
+      {
+        npc: 'lahcen',
+        lines: [
+          [LAHCEN, L('The rifles are in the mountains. Now the whole country must hear of it.', 'المكاحل وصلو للجبال. دابا خاص البلاد كاملة تسمع.')],
+          [LAHCEN, L("At Bir Lahmam the French keep a small aeroplane on a dirt strip west of the post. Hammou's cousin flew with the Free French; he showed me how they fly.", 'فبير لحمام عند الفرنساويين طيارة صغيرة فوق مدرج ديال التراب غرب المركز. ولد عم حمّو طار مع فرنسا الحرة؛ ورّاني كيفاش كيطيرو.')],
+          [LAHCEN, L('W opens the throttle. When she runs fast, Space pulls her into the sky; C pushes the nose down. Fly over the medina and press E to drop the leaflets, then land gently near the douar.', 'W كتزيد الغاز. ملي تجري مزيان، Space كيطلعها للسما؛ C كيهبّط الراس. دوز فوق المدينة وورك E باش تطيّح المناشير، من بعد نزّل بشوية حدا الدوار.')],
+        ],
+        objectives: [{ id: 'talk', text: L('Talk to Si Lahcen', 'هضر مع سي لحسن'), event: 'talk:lahcen', target: 'npc:lahcen' }],
+      },
+      {
+        objectives: [{ id: 'board', text: L('Steal the plane at the Bir Lahmam airstrip', 'سرق الطيارة من مدرج بير لحمام'), event: 'board:plane', target: 'ride:plane' }],
+      },
+      {
+        objectives: [{ id: 'drop', text: L('Fly over the medina and drop the leaflets (E)', 'طير فوق المدينة وطيّح المناشير (E)'), event: 'airdrop', target: 'zone:medina' }],
+      },
+      {
+        objectives: [{ id: 'land', text: L('Land the plane near Douar Tifawt', 'نزّل الطيارة حدا دوار تيفاوت'), event: 'landed:douar', target: 'hideout' }],
+      },
+    ],
+  },
 ];
 
 /** Idle chatter when an NPC has nothing for the current quest step. */

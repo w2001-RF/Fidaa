@@ -190,3 +190,39 @@ test('skills and settings: seven skills at five ranks, quality and fullscreen co
   await expect(page.locator('#voices')).toBeChecked();
   expect(errors).toEqual([]);
 });
+
+test('save: IndexedDB keeps progress across a reload and Continue restores it', async ({ page }) => {
+  const errors: string[] = [];
+  await boot(page, errors);
+  await expect(page.locator('#btn-continue-save')).toBeHidden();
+  await page.click('#btn-start');
+  await wait(page, 100);
+  await page.evaluate(() => {
+    const h = window.__THREE_GAME_TEST_HOOKS__;
+    h?.give?.({ bread: 7, hide: 3 });
+    h?.grantWeapon?.('pistol');
+  });
+  const lms = await page.evaluate(() => window.__THREE_GAME_TEST_HOOKS__?.landmarks?.() ?? []);
+  await page.evaluate(([x, z]) => window.__THREE_GAME_TEST_HOOKS__?.teleport?.(x + 4, z + 4), [lms[0].x, lms[0].z]);
+  await wait(page, 800);
+  const before = await game(page);
+  // pausing autosaves; the pause-menu button saves too
+  await press(page, 'Escape');
+  await click(page, '#btn-save');
+  await expect(page.locator('#save-status')).not.toBeEmpty();
+  const backend = await page.evaluate(() => window.__THREE_GAME_TEST_HOOKS__?.save?.());
+  expect(backend).toBe('indexeddb');
+
+  await page.reload();
+  await page.waitForFunction(() => (window.__THREE_GAME_DIAGNOSTICS__?.frame ?? 0) > 5, null, { timeout: 90_000 });
+  await expect(page.locator('#btn-continue-save')).toBeVisible();
+  await page.click('#btn-continue-save');
+  await wait(page, 200);
+  const after = await game(page);
+  expect(after.inventory.bread).toBe(before.inventory.bread);
+  expect(after.inventory.hide).toBe(before.inventory.hide);
+  expect(after.weapons).toContain('pistol');
+  expect(after.discovered).toEqual(expect.arrayContaining(before.discovered));
+  expect(after.fogRevealed).toBeCloseTo(before.fogRevealed, 2);
+  expect(errors).toEqual([]);
+});

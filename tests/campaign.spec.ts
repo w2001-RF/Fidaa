@@ -36,7 +36,7 @@ async function doAt(p: Page, id: string, ms: number) {
   await holdE(p, ms);
 }
 
-test('campaign: all five missions can be completed to victory', async ({ page }) => {
+test('campaign: all six missions can be completed to victory', async ({ page }) => {
   test.setTimeout(process.env.CI ? 600_000 : 240_000);
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
@@ -89,6 +89,26 @@ test('campaign: all five missions can be completed to victory', async ({ page })
   const h = await target(page, 'hideout');
   if (!h) throw new Error('hideout');
   await tp(page, h.x + 12, h.z + 4);
+  await wait(page, 600);
+  expect((await game(page)).mission).toBe('flight');
+  // 6 Wings over Tadwart: steal the plane, drop leaflets over the medina, land near the douar
+  await talk(page, 'lahcen');
+  const plane = await target(page, 'ride-plane');
+  if (!plane) throw new Error('plane');
+  await page.evaluate(() => window.__THREE_GAME_TEST_HOOKS__?.setHour?.(12));
+  await tp(page, plane.x + 2.5, plane.z);
+  await wait(page, 300);
+  await holdE(page, 1100);
+  expect((await game(page)).step).toBe(2);
+  // the flight itself: pilot() places the plane in the air over the medina
+  await page.evaluate(() => window.__THREE_GAME_TEST_HOOKS__?.pilot?.(10, 60, 30, Math.PI, 30));
+  await wait(page, 200);
+  await page.keyboard.press('KeyE');
+  await wait(page, 300);
+  expect((await game(page)).step).toBe(3);
+  // low, slow and level on the road north of the douar: she settles and rolls to a stop
+  await page.evaluate(() => window.__THREE_GAME_TEST_HOOKS__?.pilot?.(-149, 2.5, 70, Math.PI - Math.atan2(18, 60), 22));
+  await wait(page, 9000);
   await wait(page, 4500);
   await expect(page.locator('#victory-screen')).toBeVisible({ timeout: 8000 });
   expect((await game(page)).mission).toBe('done');

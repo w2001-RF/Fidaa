@@ -49,6 +49,9 @@ interface ThreeGameTestHooks {
   setLang?(lang: string): void;
   animals?(): { id: string; species: string; x: number; y: number; z: number; alive: boolean; skinned: boolean }[];
   aimAt?(x: number, y: number, z: number): void;
+  rides?(): { kind: string; x: number; y: number; z: number; speed: number; flying: boolean; crashed: boolean; reason?: string }[];
+  pilot?(x: number, alt: number, z: number, yaw: number, speed: number): void;
+  save?(): Promise<string>;
   harvestables?(kind: string): { id: number; x: number; z: number; scale: number }[];
   stress?(radius: number): void;
 }

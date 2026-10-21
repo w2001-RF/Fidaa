@@ -10,7 +10,7 @@ import { CharacterRig } from './CharacterRig';
 
 export type Weapon = WeaponId;
 export type { Skill };
-export type DeathCause = { kind: 'thirst' | 'hunger' | 'shot' | 'melee'; by?: Text };
+export type DeathCause = { kind: 'thirst' | 'hunger' | 'shot' | 'melee' | 'crash'; by?: Text };
 
 export const TUNING = {
   runSpeed: 3.5,

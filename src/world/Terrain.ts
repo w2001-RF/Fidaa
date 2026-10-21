@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Noise2D, PeriodicNoise, clamp, lerp, smoothstep } from '../utils/noise';
-import { OUED, PLAY_RADIUS, WORLD_HALF, ZONES, distToPolyline, distToRoads, zone } from './layout';
+import { AIRSTRIP, LAKE, OUED, PLAY_RADIUS, RAIL, WORLD_HALF, ZONES, distToPolyline, distToRoads, zone } from './layout';
 
 const SEGMENTS = 256;
 const CELL = (WORLD_HALF * 2) / SEGMENTS;
@@ -12,6 +12,9 @@ const CELL = (WORLD_HALF * 2) / SEGMENTS;
 export class Terrain {
   readonly mesh: THREE.Mesh;
   readonly water: THREE.Mesh;
+  readonly lakeWater: THREE.Mesh;
+  /** natural ground height at each rail vertex: the track is graded linearly between them */
+  private railGrade: number[] = [];
   private readonly heights: Float32Array;
   private readonly noise = new Noise2D(1945);
   private readonly detail = new Noise2D(56);
@@ -28,6 +31,7 @@ export class Terrain {
     }
     this.mesh = this.buildMesh();
     this.water = this.buildWater();
+    this.lakeWater = this.buildLake();
   }
 
   /** Exact height on the rendered triangle surface. */
@@ -90,7 +94,7 @@ export class Terrain {
   }
 
   /** Natural height before plateaus — used to colour slopes/roads. */
-  private computeHeight(x: number, z: number): number {
+  private computeHeight(x: number, z: number, rail = true): number {
     const nz = this.noise;
     let h = nz.fbm(x * 0.0065, z * 0.0065, 5) * 10 + nz.ridged(x * 0.011 + 40, z * 0.011 - 12, 3) * 9 - 3;
     // gentle hills band
@@ -127,6 +131,39 @@ export class Terrain {
       const smooth = nz.fbm(x * 0.0025 + 7, z * 0.0025 + 3, 1) * 4;
       h = lerp(h, Math.min(h, smooth + h * 0.6), wr * 0.35);
     }
+
+    // Airstrip: flat dirt runway with soft shoulders
+    const ax = Math.max(0, Math.abs(x - AIRSTRIP.x) - AIRSTRIP.halfW);
+    const az = Math.max(0, Math.abs(z - AIRSTRIP.z) - AIRSTRIP.halfL);
+    const wa = 1 - smoothstep(0, 18, Math.hypot(ax, az));
+    if (wa > 0) h = lerp(h, AIRSTRIP.height, wa);
+
+    // Lake: flattened shore, then a bowl below the water line
+    const dl = Math.hypot(x - LAKE.x, z - LAKE.z);
+    const wl = 1 - smoothstep(LAKE.r, LAKE.r + 28, dl);
+    if (wl > 0) h = lerp(h, 0.6, wl);
+    h -= (1 - smoothstep(LAKE.r * 0.3, LAKE.r + 4, dl)) * 5.5;
+
+    // Railway: graded bed between the natural heights at the track vertices
+    if (rail) {
+      if (this.railGrade.length === 0) this.railGrade = RAIL.map(([rx, rz]) => this.computeHeight(rx, rz, false));
+      let best = Infinity;
+      let grade = 0;
+      for (let i = 0; i < RAIL.length - 1; i += 1) {
+        const [x0, z0] = RAIL[i];
+        const [x1, z1] = RAIL[i + 1];
+        const dx = x1 - x0;
+        const dz = z1 - z0;
+        const t = Math.max(0, Math.min(1, ((x - x0) * dx + (z - z0) * dz) / (dx * dx + dz * dz)));
+        const d = Math.hypot(x0 + dx * t - x, z0 + dz * t - z);
+        if (d < best) {
+          best = d;
+          grade = lerp(this.railGrade[i], this.railGrade[i + 1], t);
+        }
+      }
+      const wrl = 1 - smoothstep(3, 14, best);
+      if (wrl > 0) h = lerp(h, grade, wrl);
+    }
     return h;
   }
 
@@ -146,6 +183,7 @@ export class Terrain {
     const snow = new THREE.Color('#f1efe9');
     const road = new THREE.Color('#e0c08f');
     const packed = new THREE.Color('#c99f72');
+    const ballast = new THREE.Color('#8a8078');
 
     for (let j = 0; j < n; j += 1) {
       for (let i = 0; i < n; i += 1) {
@@ -196,6 +234,14 @@ export class Terrain {
           c.lerp(road, wr * 0.85).multiplyScalar(lerp(1, rut, wr));
         }
 
+        // runway packed dirt, rail ballast, lake shore mud
+        const ax2 = Math.max(0, Math.abs(x - AIRSTRIP.x) - AIRSTRIP.halfW);
+        const az2 = Math.max(0, Math.abs(z - AIRSTRIP.z) - AIRSTRIP.halfL);
+        c.lerp(road, (1 - smoothstep(0, 3, Math.hypot(ax2, az2))) * 0.7);
+        c.lerp(ballast, (1 - smoothstep(1.5, 3.2, distToPolyline(x, z, RAIL))) * 0.9);
+        const dLake = Math.hypot(x - LAKE.x, z - LAKE.z);
+        c.lerp(green, (1 - smoothstep(LAKE.water, LAKE.r + 14, dLake)) * 0.7);
+
         // rock on slopes, snow on peaks
         c.lerp(rock, smoothstep(0.35, 0.8, slope));
         c.lerp(darkRock, smoothstep(0.9, 1.4, slope) * 0.6);
@@ -242,6 +288,16 @@ export class Terrain {
     mesh.receiveShadow = true;
     mesh.name = 'terrain';
     return mesh;
+  }
+
+  private buildLake(): THREE.Mesh {
+    const geo = new THREE.CircleGeometry(LAKE.r + 4, 64);
+    geo.rotateX(-Math.PI / 2);
+    const mat = new THREE.MeshPhysicalMaterial({ color: '#2a5f6e', roughness: 0.1, metalness: 0, transparent: true, opacity: 0.86, clearcoat: 1, clearcoatRoughness: 0.08 });
+    const water = new THREE.Mesh(geo, mat);
+    water.position.set(LAKE.x, LAKE.level, LAKE.z);
+    water.name = 'lakeWater';
+    return water;
   }
 
   private buildWater(): THREE.Mesh {

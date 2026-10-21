@@ -50,7 +50,8 @@ export type InteractKind =
   | 'weapon'
   | 'bench'
   | 'carcass'
-  | 'harvest';
+  | 'harvest'
+  | 'ride';
 
 export type Interactable = {
   id: string;

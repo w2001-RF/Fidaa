@@ -48,6 +48,39 @@ export const ROADS: number[][][] = [
   [[-92, -92], [-56, -78], [-20, -64], [10, -48]],
 ];
 
+/** Aguelmam: a Middle Atlas lake on the western plateau (boat, water). */
+export const LAKE = { x: -172, z: -52, r: 24, level: -1.2, water: 19 };
+
+/** Narrow-gauge railway across the north with a halt at each end. */
+export const RAIL: number[][] = [[-132, 168], [-92, 163], [-44, 158], [0, 152], [48, 156], [88, 162], [120, 165]];
+
+/** Dirt airstrip of the garrison, west of the post. */
+export const AIRSTRIP = { x: 48, z: -168, halfW: 10, halfL: 42, height: 3 };
+
+/** Ground reserved for water, track and runway: no trees, rocks, scrub or loot there. */
+export function reserved(x: number, z: number, pad = 0): boolean {
+  if (Math.hypot(x - LAKE.x, z - LAKE.z) < LAKE.r + 4 + pad) return true;
+  if (distToPolyline(x, z, RAIL) < 4.5 + pad) return true;
+  return Math.abs(x - AIRSTRIP.x) < AIRSTRIP.halfW + 4 + pad && Math.abs(z - AIRSTRIP.z) < AIRSTRIP.halfL + 6 + pad;
+}
+
+/** Total rail length and a point/heading at arc length s. */
+export const RAIL_LENGTH = RAIL.slice(1).reduce((acc, p, i) => acc + Math.hypot(p[0] - RAIL[i][0], p[1] - RAIL[i][1]), 0);
+export function railAt(s: number): { x: number; z: number; angle: number } {
+  let left = Math.max(0, Math.min(RAIL_LENGTH, s));
+  for (let i = 0; i < RAIL.length - 1; i += 1) {
+    const [ax, az] = RAIL[i];
+    const [bx, bz] = RAIL[i + 1];
+    const len = Math.hypot(bx - ax, bz - az);
+    if (left <= len || i === RAIL.length - 2) {
+      const t = Math.min(1, left / len);
+      return { x: ax + (bx - ax) * t, z: az + (bz - az) * t, angle: Math.atan2(bx - ax, bz - az) };
+    }
+    left -= len;
+  }
+  return { x: RAIL[0][0], z: RAIL[0][1], angle: 0 };
+}
+
 /** Dry riverbed (oued) path; carved slightly into terrain. */
 export const OUED: number[][] = [
   [-230, -40], [-180, -70], [-130, -82], [-95, -95], [-60, -120], [-20, -160], [20, -210], [40, -240],

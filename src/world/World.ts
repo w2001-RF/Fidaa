@@ -34,7 +34,7 @@ import {
   well,
 } from './Architecture';
 import { CollisionWorld } from './Collision';
-import { ROADS, distToRoads, samplePolyline, zone } from './layout';
+import { AIRSTRIP, LAKE, RAIL_LENGTH, ROADS, distToRoads, railAt, reserved, samplePolyline, zone } from './layout';
 import { Terrain } from './Terrain';
 
 export type Landmark = { id: string; name: Text; x: number; z: number; r: number; xp: number; reveal: number };
@@ -74,7 +74,7 @@ export class World {
   constructor(private readonly lib: MaterialLibrary) {
     this.group.name = 'world';
     this.terrain = new Terrain();
-    this.group.add(this.terrain.mesh, this.terrain.water);
+    this.group.add(this.terrain.mesh, this.terrain.water, this.terrain.lakeWater);
     const rng = createSeededRandom(1945);
 
     this.buildDouar(rng);
@@ -85,6 +85,7 @@ export class World {
     this.buildTelegraph();
     this.buildLandmarks(rng);
     this.buildResources(rng);
+    this.buildTransport(rng);
   }
 
   update(elapsed: number): void {
@@ -671,7 +672,7 @@ export class World {
     for (let i = 0; i < 400 && placed < 26; i += 1) {
       const x = (rng() - 0.5) * 420;
       const z = (rng() - 0.5) * 420;
-      if (Math.hypot(x, z) > 220 || distToRoads(x, z) < 4) continue;
+      if (Math.hypot(x, z) > 220 || distToRoads(x, z) < 4 || reserved(x, z, 1)) continue;
       if (this.collision.blockedAt(x, z, 1, this.terrain.getHeight(x, z))) continue;
       let far = true;
       for (const id of ['medina', 'kasbah', 'post'] as const) {
@@ -881,11 +882,73 @@ export class World {
     this.group.add(b.build(this.lib, 'landmarks'));
   }
 
+  /** Railway with two halts, the garrison airstrip, the lake jetty. */
+  private buildTransport(rng: () => number): void {
+    const b = new MergeBuilder();
+    const ctx = this.ctx(b, rng);
+    const gh = (x: number, z: number) => this.terrain.getHeight(x, z);
+    // track: sleepers every 0.8 m, two rails in 3 m pieces
+    for (let s = 0; s < RAIL_LENGTH; s += 0.8) {
+      const p = railAt(s);
+      b.put('wood', boxGeo(1.9, 0.12, 0.24), p.x, gh(p.x, p.z) + 0.06, p.z, p.angle, '#4a3626');
+    }
+    for (let s = 0; s < RAIL_LENGTH - 0.5; s += 3) {
+      const p = railAt(s + 1.5);
+      for (const side of [-0.55, 0.55]) {
+        const [rx, rz] = toWorld(p.x, p.z, p.angle + Math.PI / 2, side, 0);
+        b.put('iron', boxGeo(0.07, 0.1, 3.02), rx, gh(p.x, p.z) + 0.17, rz, p.angle, '#5a5450');
+      }
+    }
+    // halts: platform, shelter with a tiled roof, sign, lantern
+    for (const [s, side] of [[22, 1], [RAIL_LENGTH - 12, -1]] as const) {
+      const p = railAt(s);
+      const [px, pz] = toWorld(p.x, p.z, p.angle + Math.PI / 2, side * 3.2, 0);
+      const g = gh(px, pz);
+      b.put('stone', boxGeo(3, 0.6, 14), px, g + 0.3, pz, p.angle, '#b8ab96', { groundY: g });
+      this.collision.addBox(px, pz, 1.5, 7, p.angle, g - 1, g + 0.6, false, 'platform');
+      const [hx, hz] = toWorld(px, pz, p.angle + Math.PI / 2, side * 4, 0);
+      house(ctx, hx, hz, 4.5, 6, 3.4, p.angle + (side > 0 ? -Math.PI / 2 : Math.PI / 2), { tint: '#e8d4b0', windows: 2, door: '#2b6e63' });
+      this.lightPoints.push(lantern(ctx, px, g + 3, pz, p.angle));
+    }
+    // airstrip: hangar, windsock, fuel drums, beacon flags along the edges
+    const { x: ax, z: az, halfW, halfL } = AIRSTRIP;
+    const hx = ax + halfW + 9;
+    const hz = az - halfL + 16;
+    const hgy = gh(hx, hz);
+    b.put('metal', boxGeo(12, 0.25, 14), hx, hgy + 5.2, hz, 0, '#7d7a6e', undefined, 0, 0);
+    for (const sx of [-6, 6]) b.put('metal', boxGeo(0.2, 5.2, 14), hx + sx, hgy + 2.6, hz, 0, '#8a877a', { groundY: hgy });
+    b.put('metal', boxGeo(12, 5.2, 0.2), hx, hgy + 2.6, hz + 7, 0, '#8a877a', { groundY: hgy });
+    for (const sx of [-6, 6]) this.collision.addBox(hx + sx, hz, 0.2, 7, 0, hgy - 1, hgy + 5.2, true, 'hangar');
+    this.collision.addBox(hx, hz + 7, 6, 0.2, 0, hgy - 1, hgy + 5.2, true, 'hangar');
+    for (let i = 0; i < 4; i += 1) barrel(ctx, hx - 4 + i * 0.9, hgy, hz + 5.6, '#3d4a2c');
+    const wx = ax - halfW - 4;
+    const wz = az;
+    b.put('iron', cylGeo(0.05, 0.07, 6, 6), wx, gh(wx, wz) + 3, wz, 0, '#d8d4c8');
+    b.put('fabric', new THREE.ConeGeometry(0.35, 1.8, 10, 1, true), wx + 0.9, gh(wx, wz) + 5.7, wz, 0, '#e86a2a', { uvScale: 0.5 }, 0, Math.PI / 2);
+    for (let k = -halfL; k <= halfL; k += 12) {
+      for (const sx of [-halfW, halfW]) b.put('fabric', boxGeo(0.4, 0.3, 0.05), ax + sx, gh(ax + sx, az + k) + 0.5, az + k, 0, k % 24 === 0 ? '#f2f0ea' : '#c42b2b', { uvScale: 0 });
+    }
+    this.enemySpawns.push(
+      { id: 'a-guard1', faction: 'french', rank: 'soldier', zone: 'post', x: hx - 3, z: hz - 9, patrol: [[hx - 3, hz - 9], [ax + 4, az + 10], [ax + 4, az - 20]] },
+      { id: 'a-guard2', faction: 'french', rank: 'soldier', zone: 'post', x: ax - halfW - 3, z: az + 12, patrol: [], facing: Math.PI / 2 },
+    );
+    // lake: wooden jetty and a drinking spot on the shore
+    const jx = LAKE.x + LAKE.water - 1;
+    const jz = LAKE.z;
+    for (let k = 0; k < 6; k += 1) b.put('wood', boxGeo(1.6, 0.12, 1.05), jx + 3 - k * 1.1, LAKE.level + 0.55, jz, Math.PI / 2, '#6b4a2c');
+    for (let k = 0; k < 4; k += 1) for (const s of [-0.7, 0.7]) b.put('wood', cylGeo(0.07, 0.07, 2.2, 6), jx + 3 - k * 2, LAKE.level - 0.4, jz + s, 0, '#4a3020');
+    this.addInteract({ id: 'lake-shore', kind: 'water', pos: new THREE.Vector3(jx + 5, gh(jx + 5, jz + 3), jz + 3), radius: 2.6, prompt: L('Drink from the lake', 'شرب من الضاية'), hold: 0.8 });
+    // sleepers, rails and runway markers don't need the shadow pass
+    const transport = b.build(this.lib, 'transport');
+    transport.traverse((o) => (o.castShadow = false));
+    this.group.add(transport);
+  }
+
   /** Respawning gather nodes: deadwood piles and scrap (wire, cans, horseshoes). */
   private buildResources(rng: () => number): void {
     const b = new MergeBuilder();
     const ok = (x: number, z: number) => {
-      if (Math.hypot(x, z) > 215 || distToRoads(x, z) < 3) return false;
+      if (Math.hypot(x, z) > 215 || distToRoads(x, z) < 3 || reserved(x, z, 1)) return false;
       if (this.collision.blockedAt(x, z, 1.2, this.terrain.getHeight(x, z))) return false;
       for (const id of ['medina', 'kasbah', 'post'] as const) {
         const zz = zone(id);
@@ -917,7 +980,9 @@ export class World {
       this.addInteract({ id: `scrap-${scrap}`, kind: 'scrap', pos: new THREE.Vector3(x, g, z), radius: 1.8, prompt: L('Pick through the scrap', 'جمع الخردة'), hold: 0.9 });
       scrap += 1;
     }
-    this.group.add(b.build(this.lib, 'resources'));
+    const piles = b.build(this.lib, 'resources');
+    piles.traverse((o) => (o.castShadow = false));
+    this.group.add(piles);
   }
 
   private buildTelegraph(): void {

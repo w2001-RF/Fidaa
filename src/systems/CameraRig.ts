@@ -26,6 +26,9 @@ export class CameraRig {
   private fovPunch = 0;
   private baseFov = 58;
   reducedMotion = false;
+  /** extra follow distance and height while riding or driving */
+  rideDistance = 0;
+  rideHeight = 0;
   private readonly pivot = new THREE.Vector3();
   private readonly desired = new THREE.Vector3();
   private readonly fwd = new THREE.Vector3();
@@ -61,7 +64,7 @@ export class CameraRig {
 
   update(dt: number, player: THREE.Vector3, crouch: number, aim: number, sprint: boolean, collision: CollisionWorld, terrain: Terrain): void {
     this.time += dt;
-    this.pivot.set(player.x, player.y + 1.58 - crouch * 0.5, player.z);
+    this.pivot.set(player.x, player.y + 1.58 - crouch * 0.5 + this.rideHeight, player.z);
     if (!this.initialized) {
       this.smoothPivot.copy(this.pivot);
       this.initialized = true;
@@ -72,7 +75,7 @@ export class CameraRig {
     this.forward(this.fwd);
     this.right.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
 
-    const wantDist = THREE.MathUtils.lerp(4.2, 1.75, aim) + (sprint ? 0.4 : 0);
+    const wantDist = THREE.MathUtils.lerp(4.2, 1.75, aim) + (sprint ? 0.4 : 0) + this.rideDistance;
     const shoulder = THREE.MathUtils.lerp(0.72, 0.6, aim);
     const base = this.smoothPivot;
     const shoulderPt = this.desired.copy(base).addScaledVector(this.right, shoulder);

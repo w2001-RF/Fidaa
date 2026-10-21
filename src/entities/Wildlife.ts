@@ -5,7 +5,7 @@ import type { LootBundle } from '../game/types';
 import { angleDiff, clamp } from '../utils/noise';
 import { createSeededRandom } from '../utils/random';
 import type { CollisionWorld } from '../world/Collision';
-import { ZONES } from '../world/layout';
+import { ZONES, reserved } from '../world/layout';
 import type { Terrain } from '../world/Terrain';
 
 export type Species = 'gazelle' | 'boar' | 'hare';
@@ -158,7 +158,8 @@ export class Wildlife {
       const b = new THREE.InstancedMesh(body, mat, Math.max(1, counts[sp]));
       const l = new THREE.InstancedMesh(leg, mat, Math.max(1, counts[sp] * 4));
       for (const im of [b, l]) {
-        im.castShadow = true;
+        // thin legs and the little hares add a shadow pass for no visible gain
+        im.castShadow = im === b && sp !== 'hare';
         im.receiveShadow = true;
         im.frustumCulled = false;
         im.count = 0;
@@ -205,7 +206,7 @@ export class Wildlife {
   private walkable(x: number, z: number): boolean {
     if (Math.hypot(x, z) > 222) return false;
     for (const zn of ZONES) if (Math.hypot(x - zn.x, z - zn.z) < zn.radius + 12) return false;
-    if (this.terrain.getSlope(x, z) > 0.75) return false;
+    if (this.terrain.getSlope(x, z) > 0.75 || reserved(x, z, -3)) return false;
     return !this.collision.blockedAt(x, z, 0.5, this.terrain.getHeight(x, z));
   }
 
@@ -478,3 +479,5 @@ function buildSpecies(sp: Species): [THREE.BufferGeometry, THREE.BufferGeometry]
   const leg = merge([part(new THREE.CylinderGeometry(0.025, 0.02, 0.14, 5), fur, 0, -0.07, 0.02)]);
   return [body, leg];
 }
+
+export { part as buildPart, merge as mergeParts };

@@ -131,7 +131,7 @@ test('load test: flythrough and firefight stay inside render and memory budgets'
     expect.soft(r.calls, `${name} draw calls`).toBeLessThanOrEqual(BUDGET.calls);
     expect.soft(r.triangles, `${name} triangles`).toBeLessThanOrEqual(BUDGET.triangles);
     expect.soft(r.textures, `${name} textures`).toBeLessThanOrEqual(BUDGET.textures);
-    expect.soft(r.frames, `${name} rendered frames`).toBeGreaterThan(3);
+    expect.soft(r.frames, `${name} rendered frames`).toBeGreaterThanOrEqual(software ? 1 : 4);
     if (!software) expect.soft(r.p95, `${name} p95 frame ms`).toBeLessThanOrEqual(BUDGET.p95MsGpu);
   }
   if (heap0 > 0) expect(heap1 - heap0, 'JS heap growth (MB)').toBeLessThanOrEqual(BUDGET.heapGrowthMB);

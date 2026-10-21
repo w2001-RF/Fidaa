@@ -3,7 +3,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Noise2D, smoothstep } from '../utils/noise';
 import { createSeededRandom } from '../utils/random';
 import type { CollisionWorld } from './Collision';
-import { OUED, PLAY_RADIUS, ZONES, distToPolyline, distToRoads, zone } from './layout';
+import { OUED, PLAY_RADIUS, ZONES, distToPolyline, distToRoads, reserved, zone } from './layout';
 import type { Terrain } from './Terrain';
 
 type Species = 'palm' | 'olive' | 'argan' | 'cactus' | 'rock' | 'scrub';
@@ -194,7 +194,7 @@ export class Vegetation {
       return false;
     };
 
-    const free = (x: number, z: number, r: number) => !collision.blockedAt(x, z, r, terrain.getHeight(x, z));
+    const free = (x: number, z: number, r: number) => !reserved(x, z, r) && !collision.blockedAt(x, z, r, terrain.getHeight(x, z));
 
     // Palms along the oued and around the oasis + a few in the douar
     const oasis = zone('oasis');
@@ -285,7 +285,7 @@ export class Vegetation {
       const slope = terrain.getSlope(x, z);
       const p = 0.18 + slope * 0.6 + (r > PLAY_RADIUS - 10 ? 0.5 : 0);
       if (rng() > p) continue;
-      if (distToRoads(x, z) < 3.5 || inSettlement(x, z, 1)) continue;
+      if (distToRoads(x, z) < 3.5 || inSettlement(x, z, 1) || reserved(x, z, 1)) continue;
       const big = rng() < 0.12;
       const s = big ? 1.6 + rng() * 2.4 : 0.3 + rng() * 0.9;
       const rm = add('rock', x, z, s, -s * 0.25, 0.8);
@@ -309,7 +309,7 @@ export class Vegetation {
       const wet = 1 - smoothstep(4, 40, distToPolyline(x, z, OUED));
       const p = 0.35 + wet * 0.5 + noise.fbm(x * 0.03, z * 0.03, 2) * 0.4;
       if (rng() > p) continue;
-      if (distToRoads(x, z) < 2.6 || inSettlement(x, z, -4)) continue;
+      if (distToRoads(x, z) < 2.6 || inSettlement(x, z, -4) || reserved(x, z, -2)) continue;
       add('scrub', x, z, 0.6 + rng() * 0.8, -0.02, 0.15);
     }
     return out;

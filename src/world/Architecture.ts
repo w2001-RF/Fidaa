@@ -56,6 +56,8 @@ function archFrameGeo(w: number, h: number, border: number, depth: number): THRE
   return g;
 }
 
+const LAUNDRY = ['#e9e2d0', '#2f5f8a', '#b3201f', '#d7a24a', '#3d6b3a', '#efe6cf', '#7b3b22'];
+
 export const DOOR_COLORS = ['#2f5f8a', '#2b6e63', '#7b3b22', '#3d6b3a', '#5a3a26', '#2d4f7c'];
 export const PLASTER_TINTS = ['#d79a6b', '#e2ad7d', '#cf8a5c', '#e8c39c', '#d9a07a', '#c97d55', '#ecd2b0'];
 
@@ -450,6 +452,103 @@ export function stall(ctx: BuildCtx, x: number, z: number, angle: number): void 
     b.put('fabric', boxGeo(0.5, 0.5, 0.04), rx, g + 1.3, rz, angle, '#1f2c4a', { uvScale: 0.8 }, 0, Math.PI / 4);
   }
   col.addBox(cx, cz, W / 2 - 0.1, 0.35, angle, g - 1, g + 0.9, false, 'stall');
+}
+
+/** Pierced-brass Moroccan lantern hanging from a wall bracket; returns the glow point. */
+export function lantern(ctx: BuildCtx, x: number, y: number, z: number, angle: number): THREE.Vector3 {
+  const { b } = ctx;
+  const [bx, bz] = toWorld(x, z, angle, 0, 0.45);
+  b.put('iron', boxGeo(0.05, 0.05, 0.6), bx, y + 0.55, bz, angle, '#2a2622');
+  b.put('metal', new THREE.CylinderGeometry(0.02, 0.02, 0.35, 5), bx, y + 0.33, bz, 0, '#8a6a2a');
+  b.put('metal', new THREE.ConeGeometry(0.17, 0.2, 8), bx, y + 0.12, bz, 0, '#b8902e');
+  b.put('glow', new THREE.CylinderGeometry(0.14, 0.11, 0.32, 8), bx, y - 0.13, bz, 0, '#ffb35a', { uvScale: 0 });
+  b.put('metal', new THREE.ConeGeometry(0.13, 0.12, 8), bx, y - 0.34, bz, 0, '#b8902e', undefined, Math.PI);
+  return new THREE.Vector3(bx, y - 0.1, bz);
+}
+
+/** Laundry line between two points: rope sagging with hanging cloths. */
+export function laundry(ctx: BuildCtx, ax: number, az: number, bx: number, bz: number, y: number): void {
+  const { b, rng } = ctx;
+  const len = Math.hypot(bx - ax, bz - az);
+  const ang = Math.atan2(bx - ax, bz - az);
+  const n = Math.max(2, Math.round(len / 0.9));
+  for (let i = 0; i < n; i += 1) {
+    const t = (i + 0.5) / n;
+    const sag = Math.sin(Math.PI * t) * 0.35;
+    const x = ax + (bx - ax) * t;
+    const z = az + (bz - az) * t;
+    b.put('fabric', new THREE.CylinderGeometry(0.01, 0.01, len / n, 4), x, y - sag, z, ang, '#d8cfb8', { uvScale: 0 }, Math.PI / 2);
+    if (rng() < 0.75) {
+      const w = 0.4 + rng() * 0.4;
+      const h = 0.5 + rng() * 0.6;
+      b.put('fabric', boxGeo(w, h, 0.02), x, y - sag - h / 2, z, ang + Math.PI / 2, LAUNDRY[Math.floor(rng() * LAUNDRY.length)], { uvScale: 0.5 });
+    }
+  }
+}
+
+/** Terracotta pot with a small shrub or geranium. */
+export function pottedPlant(ctx: BuildCtx, x: number, z: number, flowers: boolean): void {
+  const { b, terrain, rng } = ctx;
+  const g = terrain.getHeight(x, z);
+  b.put('pise', new THREE.CylinderGeometry(0.26, 0.18, 0.42, 10), x, g + 0.21, z, 0, '#b5653a');
+  b.put('foliage', new THREE.IcosahedronGeometry(0.34, 0), x, g + 0.68, z, rng() * 3, '#5e7a3a');
+  if (flowers) {
+    for (let k = 0; k < 5; k += 1) {
+      b.put('fabric', new THREE.IcosahedronGeometry(0.07, 0), x + (rng() - 0.5) * 0.5, g + 0.8 + rng() * 0.2, z + (rng() - 0.5) * 0.5, 0, rng() < 0.5 ? '#d8344a' : '#f2f0ea', { uvScale: 0 });
+    }
+  }
+}
+
+/** Wooden handcart loaded with sacks. */
+export function handcart(ctx: BuildCtx, x: number, z: number, angle: number): void {
+  const { b, col, terrain, rng } = ctx;
+  const g = terrain.getHeight(x, z);
+  b.put('wood', boxGeo(1.1, 0.12, 1.7), x, g + 0.62, z, angle, '#6b4a2c', undefined, 0.08);
+  for (const s of [-1, 1]) {
+    const [wx, wz] = toWorld(x, z, angle, s * 0.62, 0.2);
+    b.put('wood', new THREE.CylinderGeometry(0.42, 0.42, 0.07, 12), wx, g + 0.42, wz, angle + Math.PI / 2, '#4a3020', undefined, 0, Math.PI / 2);
+    const [hx, hz] = toWorld(x, z, angle, s * 0.4, -1.4);
+    b.put('wood', boxGeo(0.06, 0.06, 1.2), hx, g + 0.45, hz, angle, '#5a3a24', undefined, -0.3);
+  }
+  for (let k = 0; k < 3; k += 1) {
+    const [sx, sz] = toWorld(x, z, angle, -0.25 + (k % 2) * 0.5, -0.4 + k * 0.4);
+    b.put('fabric', new THREE.SphereGeometry(0.3, 8, 6), sx, g + 0.9, sz, rng(), '#c8b083', { uvScale: 0.6 });
+  }
+  col.addBox(x, z, 0.6, 0.9, angle, g - 1, g + 1.1, false, 'cart');
+}
+
+/** Laden donkey (static prop) with panniers. */
+export function donkey(ctx: BuildCtx, x: number, z: number, angle: number): void {
+  const { b, col, terrain } = ctx;
+  const g = terrain.getHeight(x, z);
+  const coat = '#7d726a';
+  const P = (lx: number, ly: number, lz: number): [number, number, number] => {
+    const [wx, wz] = toWorld(x, z, angle, lx, lz);
+    return [wx, g + ly, wz];
+  };
+  let [px, py, pz] = P(0, 0.95, 0);
+  b.put('fabric', new THREE.CapsuleGeometry(0.28, 0.75, 4, 10), px, py, pz, angle, coat, { uvScale: 0.6 }, Math.PI / 2);
+  for (const [lx, lz] of [[-0.17, 0.42], [0.17, 0.42], [-0.17, -0.42], [0.17, -0.42]]) {
+    [px, py, pz] = P(lx, 0.42, lz);
+    b.put('fabric', new THREE.CylinderGeometry(0.06, 0.05, 0.84, 6), px, py, pz, angle, coat, { uvScale: 0 });
+    [px, py, pz] = P(lx, 0.03, lz);
+    b.put('dark', boxGeo(0.1, 0.06, 0.12), px, py, pz, angle, '#2a2420');
+  }
+  [px, py, pz] = P(0, 1.3, 0.62);
+  b.put('fabric', new THREE.CylinderGeometry(0.11, 0.15, 0.5, 8), px, py, pz, angle, coat, { uvScale: 0 }, 0.7);
+  [px, py, pz] = P(0, 1.5, 0.9);
+  b.put('fabric', new THREE.CapsuleGeometry(0.12, 0.28, 4, 8), px, py, pz, angle, coat, { uvScale: 0 }, 1.2);
+  [px, py, pz] = P(0, 1.45, 1.06);
+  b.put('fabric', new THREE.SphereGeometry(0.1, 8, 6), px, py, pz, angle, '#d8d0c4', { uvScale: 0 });
+  for (const s of [-1, 1]) {
+    [px, py, pz] = P(s * 0.08, 1.74, 0.82);
+    b.put('fabric', new THREE.ConeGeometry(0.045, 0.26, 5), px, py, pz, angle, coat, { uvScale: 0 }, -0.3, s * 0.3);
+    [px, py, pz] = P(s * 0.36, 0.95, 0);
+    b.put('fabric', boxGeo(0.22, 0.42, 0.55), px, py, pz, angle, s > 0 ? '#8a5a2a' : '#7a3a22', { uvScale: 0.5 });
+  }
+  [px, py, pz] = P(0, 1.25, 0);
+  b.put('fabric', boxGeo(0.6, 0.06, 0.62), px, py, pz, angle, '#b3201f', { uvScale: 0.5 });
+  col.addBox(x, z, 0.35, 0.8, angle, g - 1, g + 1.6, false, 'donkey');
 }
 
 /** Military gable tent. */

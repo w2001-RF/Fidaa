@@ -11,7 +11,12 @@ import {
   barracks,
   barrel,
   crate,
+  donkey,
   fountain,
+  handcart,
+  lantern,
+  laundry,
+  pottedPlant,
   gate,
   house,
   jar,
@@ -218,6 +223,11 @@ export class World {
     // Moroccan flag hidden on the safe-house wall
     this.addFlag(cx + 9.6, this.terrain.getHeight(cx + 9, cz - 8) + 2.5, cz - 8.4, -0.15, 'morocco', 1.6, 1.1, false);
 
+    donkey(ctx, cx - 14, cz + 6, 0.8);
+    handcart(ctx, cx + 14, cz + 10, 2.4);
+    for (let i = 0; i < 6; i += 1) pottedPlant(ctx, cx - 6 + i * 2.2, cz - 8.6, i % 2 === 0);
+    this.lightPoints.push(lantern(ctx, cx + 5, this.terrain.getHeight(cx + 5, cz - 8.4) + 2.9, cz - 8.4, Math.PI));
+
     this.group.add(b.build(this.lib, 'douar'));
 
     this.playerSpawn.set(cx + 4, this.terrain.getHeight(cx + 4, cz + 6), cz + 6);
@@ -401,6 +411,40 @@ export class World {
       }
       this.addLoot(`medina-loot-${i}`, new THREE.Vector3(x, g, z), loot);
     });
+
+    // Street life: lanterns along the main streets (glow at night), laundry over side
+    // alleys, potted plants by doorways, handcarts and a laden donkey in the souk.
+    for (let lx = -48; lx <= 48; lx += 12) {
+      if (Math.abs(lx) < 14) continue;
+      for (const side of [-1, 1]) {
+        const lz = cz + side * 7.6;
+        const y = this.terrain.getHeight(cx + lx, lz) + 3.4;
+        this.lightPoints.push(lantern(ctx, cx + lx + side * 1.5, y, lz, side > 0 ? Math.PI : 0));
+      }
+    }
+    for (let lz = -48; lz <= 48; lz += 14) {
+      if (Math.abs(lz) < 14) continue;
+      const y = this.terrain.getHeight(cx + 4.2, cz + lz) + 3.3;
+      this.lightPoints.push(lantern(ctx, cx + 4.2, y, cz + lz, -Math.PI / 2));
+    }
+    for (let i = 0; i < 14; i += 1) {
+      const ax = cx - 44 + rng() * 88;
+      const az = cz + (rng() < 0.5 ? -1 : 1) * (14 + rng() * 34);
+      if (blocked(ax, az, 0.5)) continue;
+      const y = this.terrain.getHeight(ax, az) + 4.2 + rng() * 1.2;
+      laundry(ctx, ax - 3.5, az - 0.8, ax + 3.5, az + 0.8, y);
+    }
+    let pots = 0;
+    for (let i = 0; i < 80 && pots < 26; i += 1) {
+      const px = cx - 50 + rng() * 100;
+      const pz = cz + (rng() < 0.5 ? -1 : 1) * (8.2 + rng() * 0.6);
+      if (this.collision.blockedAt(px, pz, 0.4, this.terrain.getHeight(px, pz))) continue;
+      pottedPlant(ctx, px, pz, rng() < 0.5);
+      pots += 1;
+    }
+    handcart(ctx, cx + 24, cz + 1.2, 1.4);
+    handcart(ctx, cx - 30, cz - 1.0, -1.8);
+    donkey(ctx, cx + 9, cz + 9.5, 2.2);
 
     this.group.add(b.build(this.lib, 'medina'));
 

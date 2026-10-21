@@ -214,8 +214,16 @@ export class CharacterRig {
     add(HEAD, sph(0.115, 14, 10), pal.skin, 0, 0.1, 0.005, 0, 0, 0, 0.92, 1.08, 1);
     add(HEAD, box(0.03, 0.05, 0.04), pal.skin, 0, 0.09, 0.115); // nose
     add(HEAD, box(0.16, 0.022, 0.02), '#1a120c', 0, 0.135, 0.1); // brows
-    add(HEAD, box(0.025, 0.018, 0.01), '#0e0a08', 0.04, 0.115, 0.108);
-    add(HEAD, box(0.025, 0.018, 0.01), '#0e0a08', -0.04, 0.115, 0.108);
+    // eyes: whites with dark irises, ears, a mouth line and cheekbones read at gameplay distance
+    for (const side of [1, -1]) {
+      add(HEAD, box(0.034, 0.02, 0.008), '#e8e0d2', side * 0.04, 0.115, 0.104);
+      add(HEAD, box(0.016, 0.018, 0.01), '#0e0a08', side * 0.04, 0.115, 0.109);
+      add(HEAD, sph(0.028, 8, 6), shade(pal.skin, 0.92), side * 0.106, 0.1, 0.0, 0, 0, 0, 0.55, 1, 0.8);
+      add(HEAD, sph(0.03, 8, 6), shade(pal.skin, 1.05), side * 0.06, 0.075, 0.085, 0, 0, 0, 1, 0.7, 0.6);
+    }
+    add(HEAD, box(0.05, 0.008, 0.01), '#5a2a22', 0, 0.045, 0.107);
+    const female = outfit === 'zahra' || outfit === 'villagerF';
+    if (!pal.beard && !female && outfit !== 'french') add(HEAD, box(0.07, 0.016, 0.02), '#1a120c', 0, 0.063, 0.112); // moustache
     if (pal.beard) {
       add(HEAD, box(0.15, 0.08, 0.06), pal.beard, 0, 0.02, 0.085);
       add(HEAD, box(0.09, 0.02, 0.02), pal.beard, 0, 0.058, 0.116);

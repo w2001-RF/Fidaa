@@ -33,8 +33,8 @@ import {
   watchtower,
   well,
 } from './Architecture';
-import { CollisionWorld } from './Collision';
-import { AIRSTRIP, LAKE, RAIL_LENGTH, ROADS, distToRoads, railAt, reserved, samplePolyline, zone } from './layout';
+import { CollisionWorld, type BoxCollider } from './Collision';
+import { AIRSTRIP, DOUAR_STRIP, LAKE, RAIL_LENGTH, ROADS, STRIPS, distToRoads, railAt, reserved, samplePolyline, zone } from './layout';
 import { Terrain } from './Terrain';
 
 export type Landmark = { id: string; name: Text; x: number; z: number; r: number; xp: number; reveal: number };
@@ -67,6 +67,7 @@ export class World {
   prisonDoor!: THREE.Object3D;
   prisonDoorCollider!: ReturnType<CollisionWorld['addBox']>;
   armsCache!: THREE.Object3D;
+  private readonly armsCacheColliders: BoxCollider[] = [];
   private wires!: THREE.LineSegments;
   private wireSpans: { a: number; b: number; offset: number }[] = [];
   private readonly flagMaterials: THREE.MeshStandardMaterial[] = [];
@@ -128,6 +129,7 @@ export class World {
 
   takeArmsCache(): void {
     this.armsCache.visible = false;
+    for (const c of this.armsCacheColliders) c.enabled = false;
   }
 
   postLeaflet(id: string): void {
@@ -218,6 +220,7 @@ export class World {
       const x = cx - 20 + i * 1.1;
       const z = cz + 12;
       b.put('fabric', new THREE.CylinderGeometry(0.6, 0.7, 0.9, 10), x, this.terrain.getHeight(x, z) + 0.45, z, 0, '#c8a960', { uvScale: 0.8 });
+      this.collision.addCircle(x, z, 0.65, this.terrain.getHeight(x, z) - 1, this.terrain.getHeight(x, z) + 0.9, false, 'hay');
     }
     this.addLoot('douar-jar', new THREE.Vector3(cx - 13, this.terrain.getHeight(cx - 13, cz - 4), cz - 4), { dates: 2, herbs: 1, cloth: 2 }, L('Search the storage jars', 'فتّش الخوابي'));
 
@@ -568,6 +571,7 @@ export class World {
     b.put('wood', boxGeo(7.5, 0.14, 0.14), cx + 0.2, gg + 1.05, gz - 0.5, 0, '#c9c3b5', undefined, 0, 0.0);
     for (let i = 0; i < 5; i += 1) b.put('wood', boxGeo(0.6, 0.15, 0.16), cx - 3 + i * 1.5, gg + 1.05, gz - 0.5, 0, '#a82a22');
     b.put('wood', boxGeo(0.3, 1.2, 0.3), cx - 3.8, gg + 0.6, gz - 0.5, 0, '#4a3020');
+    this.collision.addBox(cx - 3.8, gz - 0.5, 0.15, 0.15, 0, gg - 1, gg + 1.2, false, 'barrier-post');
     house(ctx, cx + 7, gz + 3.5, 2.6, 2.6, 2.6, Math.PI, { tint: '#e5ddcc', windows: 2, door: '#3d5a3f' });
     sandbags(ctx, cx - 7, gz - 2, 0, 4.5);
     sandbags(ctx, cx + 7, gz - 2.5, 0, 3.5);
@@ -592,13 +596,16 @@ export class World {
     const cache = new MergeBuilder();
     const cctx = this.ctx(cache, rng);
     const cg = this.terrain.getHeight(depotFront.x, depotFront.z);
-    for (let i = 0; i < 3; i += 1) for (let j = 0; j < 2; j += 1) crate(cctx, depotFront.x - 1.4 + i * 1.1, cg + j * 0.72, depotFront.z + 0.4, Math.PI / 2, 0.9, '#4f5a35');
-    crate(cctx, depotFront.x - 0.3, cg + 1.44, depotFront.z + 0.4, Math.PI / 2 + 0.2, 0.9, '#4f5a35');
+    for (let i = 0; i < 3; i += 1) for (let j = 0; j < 2; j += 1) this.armsCacheColliders.push(crate(cctx, depotFront.x - 1.4 + i * 1.1, cg + j * 0.72, depotFront.z + 0.4, Math.PI / 2, 0.9, '#4f5a35'));
+    this.armsCacheColliders.push(crate(cctx, depotFront.x - 0.3, cg + 1.44, depotFront.z + 0.4, Math.PI / 2 + 0.2, 0.9, '#4f5a35'));
     for (let i = 0; i < 4; i += 1) cache.put('wood', boxGeo(0.1, 0.1, 1.3), depotFront.x - 1.2 + i * 0.25, cg + 2.0, depotFront.z + 0.4, 0, '#3b2a1c', undefined, 0, 0.3);
     this.armsCache = cache.build(this.lib, 'arms-cache');
     this.group.add(this.armsCache);
     b.put('fabric', boxGeo(4.6, 0.05, 2.6), depotFront.x - 0.3, cg + 2.6, depotFront.z + 0.2, Math.PI, '#77724e', { uvScale: 1.2 }, 0.25);
-    for (const s of [-1, 1]) b.put('wood', boxGeo(0.12, 2.4, 0.12), depotFront.x - 0.3 + s * 2.2, cg + 1.2, depotFront.z + 1.4, 0, '#4a3020');
+    for (const s of [-1, 1]) {
+      b.put('wood', boxGeo(0.12, 2.4, 0.12), depotFront.x - 0.3 + s * 2.2, cg + 1.2, depotFront.z + 1.4, 0, '#4a3020');
+      this.collision.addCircle(depotFront.x - 0.3 + s * 2.2, depotFront.z + 1.4, 0.08, cg - 1, cg + 2.4, false, 'post');
+    }
     this.addInteract({ id: 'arms-cache', kind: 'cache', pos: new THREE.Vector3(depotFront.x - 0.3, cg, depotFront.z + 1.6), radius: 2.4, prompt: L('Steal the arms cache', 'سرق السلاح'), hold: 2.5, enabled: false, questGate: 'cache' });
 
     // tents rows
@@ -731,7 +738,7 @@ export class World {
     const rock = (x: number, z: number, s: number, tint = '#9a8470') => {
       const g = gh(x, z);
       b.put('stone', new THREE.DodecahedronGeometry(s, 0), x, g + s * 0.45, z, rng() * 6, tint, { uvScale: 1.4 }, rng(), rng());
-      this.collision.addCircle(x, z, s * 0.85, g - 1, g + s * 1.3, true, 'rock');
+      this.collision.addCircle(x, z, s * 0.95, g - 1, g + s * 1.3, true, 'rock');
     };
 
     // 1. Roman ruins: broken colonnade and a fallen arch
@@ -749,7 +756,14 @@ export class World {
         this.collision.addCircle(cx, z, 0.55, g - 1, g + h, true, 'column');
       }
       b.put('stone', boxGeo(7, 0.6, 1.0), x - 3, gh(x - 3, z) + 6.2, z, 0, '#d4c8b2');
-      for (let i = 0; i < 5; i += 1) b.put('stone', cylGeo(0.42, 0.42, 2.4, 10), x - 6 + i * 2.6, gh(x - 6 + i * 2.6, z + 5) + 0.42, z + 5 + rng(), rng() * 3, '#c8bca6', undefined, Math.PI / 2);
+      for (let i = 0; i < 5; i += 1) {
+        const dx = x - 6 + i * 2.6;
+        const dz = z + 5 + rng();
+        const dg = gh(dx, z + 5);
+        const da = rng() * 3;
+        b.put('stone', cylGeo(0.42, 0.42, 2.4, 10), dx, dg + 0.42, dz, da, '#c8bca6', undefined, Math.PI / 2);
+        this.collision.addBox(dx, dz, 0.42, 1.2, da, dg - 1, dg + 0.84, false, 'drum'); // lying along its local z
+      }
       const ag = gh(x + 6, z + 9);
       b.put('stone', archGeo2(3.6, 4.4, 1.0), x + 6, ag, z + 9, 0.3, '#d6cab4');
       this.collision.addBox(x + 6, z + 9, 2.3, 0.6, 0.3, ag - 1, ag + 4.6, true, 'arch');
@@ -768,6 +782,7 @@ export class World {
       }
       const g = gh(x, z);
       b.put('dark', new THREE.SphereGeometry(2.4, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), x, g - 0.2, z, 0, '#140f0c');
+      this.collision.addCircle(x, z, 2.3, g - 1, g + 2.2, true, 'cave');
       b.put('wood', boxGeo(1.6, 0.06, 0.9), x + 1.5, g + 0.04, z - 3, 0.4, '#7a5232');
       this.addLoot('cave-loot', new THREE.Vector3(x + 1.5, g, z - 3), { cloth: 2, dates: 2, shot: 2, wood: 1 }, L("Search the shepherds' bundle", 'فتّش زّكيبة الرعيان'));
       this.lightPoints.push(new THREE.Vector3(x, g + 1, z - 2));
@@ -791,6 +806,7 @@ export class World {
       b.put('wood', cylGeo(0.06, 0.06, 1.1, 6), x, fg + 0.15, z + 6, 0.5, '#3b2a1c', undefined, Math.PI / 2);
       b.put('glow', new THREE.ConeGeometry(0.3, 0.6, 6), x, fg + 0.35, z + 6, 0, '#ff8a2a', { uvScale: 0 });
       this.lightPoints.push(new THREE.Vector3(x, fg + 0.8, z + 6));
+      this.npcSpawns.push({ id: 'nomad-trader', name: L('Nomad trader', 'التاجر الرحّال'), outfit: 'villager', x: x + 2.5, z: z + 7.5, facing: Math.PI, sitting: true });
       this.addLoot('camp-loot', new THREE.Vector3(x - 3, gh(x - 3, z + 3.5), z + 3.5), { cloth: 3, bread: 1, dates: 2 }, L('Trade for supplies (they insist)', 'خود شوية زّاد (هوما اللي بغاو)'));
     }
 
@@ -803,6 +819,7 @@ export class World {
       for (const s of [-1.4, 1.4]) b.put('wood', boxGeo(0.3, 3, 0.3), x + s, g + 1.5, z, 0, '#4d3726');
       b.put('wood', boxGeo(3.4, 0.35, 0.35), x, g + 3, z, 0, '#4d3726');
       b.put('dark', boxGeo(2.5, 2.8, 0.2), x, g + 1.4, z + 0.2, 0, '#0c0a08');
+      this.collision.addBox(x, z + 0.1, 1.6, 0.25, 0, g - 1, g + 3.2, true, 'mine-portal');
       for (let i = 0; i < 6; i += 1) rock(x + (i - 2.5) * 2.4, z + 2.2 + rng(), 2 + rng() * 1.2, '#7d6e62');
       for (let i = 0; i < 8; i += 1) b.put('iron', boxGeo(0.08, 0.06, 1.6), x + (i % 2 ? 0.6 : -0.6), gh(x, z - 2 - Math.floor(i / 2) * 1.6) + 0.04, z - 2 - Math.floor(i / 2) * 1.6, 0, '#3a3430');
       for (let i = 0; i < 2; i += 1) {
@@ -830,10 +847,10 @@ export class World {
       this.addLoot('press-loot', new THREE.Vector3(x + 4, gh(x + 4, z + 2), z + 2), { wood: 3, cloth: 1, dates: 1 }, L('Search the press', 'فتّش المعصرة'));
     }
 
-    // 6. Burned-out convoy on the old track
+    // 6. Burned-out convoy on the old track (west of the garrison airstrip's climb-out)
     {
-      const x = 42;
-      const z = -100;
+      const x = 16;
+      const z = -98;
       mark('convoy', L('Ambushed convoy', 'القافلة المحروقة'), x, z, 20, 30);
       truck(ctx, x, z, 1.2);
       truck(ctx, x - 7, z + 4, 0.7);
@@ -848,10 +865,11 @@ export class World {
       const z = -168;
       mark('lookout', L('Atlas lookout', 'مرقب الأطلس'), x, z, 16, 35, 150);
       const g = gh(x, z);
-      b.put('stone', cylGeo(3, 3.4, 1, 10), x, g + 0.5, z, 0, '#8e7f70');
-      for (let i = 0; i < 5; i += 1) b.put('stone', new THREE.DodecahedronGeometry(0.9 - i * 0.14, 0), x, g + 1.4 + i * 0.6, z, i, '#a49480');
+      // low enough to step up on (colliders under knee height are stepped over)
+      b.put('stone', cylGeo(3, 3.4, 0.42, 10), x, g + 0.21, z, 0, '#8e7f70');
+      for (let i = 0; i < 5; i += 1) b.put('stone', new THREE.DodecahedronGeometry(0.9 - i * 0.14, 0), x, g + 0.82 + i * 0.6, z, i, '#a49480');
       this.collision.addCircle(x, z, 1.1, g - 1, g + 4, true, 'cairn');
-      this.addLoot('lookout-loot', new THREE.Vector3(x + 2, g + 1, z + 2), { herbs: 2, cloth: 1 }, L("Take the watchman's cache", 'خود خبيّة العسّاس'));
+      this.addLoot('lookout-loot', new THREE.Vector3(x + 2, g + 0.42, z + 2), { herbs: 2, cloth: 1 }, L("Take the watchman's cache", 'خود خبيّة العسّاس'));
     }
 
     // 8. Hidden fidāʾī cache in an argan grove
@@ -921,12 +939,44 @@ export class World {
     for (const sx of [-6, 6]) this.collision.addBox(hx + sx, hz, 0.2, 7, 0, hgy - 1, hgy + 5.2, true, 'hangar');
     this.collision.addBox(hx, hz + 7, 6, 0.2, 0, hgy - 1, hgy + 5.2, true, 'hangar');
     for (let i = 0; i < 4; i += 1) barrel(ctx, hx - 4 + i * 0.9, hgy, hz + 5.6, '#3d4a2c');
-    const wx = ax - halfW - 4;
-    const wz = az;
-    b.put('iron', cylGeo(0.05, 0.07, 6, 6), wx, gh(wx, wz) + 3, wz, 0, '#d8d4c8');
-    b.put('fabric', new THREE.ConeGeometry(0.35, 1.8, 10, 1, true), wx + 0.9, gh(wx, wz) + 5.7, wz, 0, '#e86a2a', { uvScale: 0.5 }, 0, Math.PI / 2);
-    for (let k = -halfL; k <= halfL; k += 12) {
-      for (const sx of [-halfW, halfW]) b.put('fabric', boxGeo(0.4, 0.3, 0.05), ax + sx, gh(ax + sx, az + k) + 0.5, az + k, 0, k % 24 === 0 ? '#f2f0ea' : '#c42b2b', { uvScale: 0 });
+    // each strip: a windsock beside it, red and white edge flags, whitewashed threshold stones
+    for (const strip of STRIPS) {
+      const c = Math.cos(strip.angle);
+      const n = Math.sin(strip.angle);
+      const at = (lx: number, lz: number): [number, number] => [strip.x + lx * c + lz * n, strip.z - lx * n + lz * c];
+      const [wx, wz] = at(-strip.halfW - 4, strip.halfL * 0.3);
+      b.put('iron', cylGeo(0.05, 0.07, 6, 6), wx, gh(wx, wz) + 3, wz, 0, '#d8d4c8');
+      this.collision.addCircle(wx, wz, 0.1, gh(wx, wz) - 1, gh(wx, wz) + 6, false, 'pole');
+      b.put('fabric', new THREE.ConeGeometry(0.35, 1.8, 10, 1, true), wx + 0.9, gh(wx, wz) + 5.7, wz, 0, '#e86a2a', { uvScale: 0.5 }, 0, Math.PI / 2);
+      for (let k = -strip.halfL; k <= strip.halfL; k += 12) {
+        for (const sx of [-strip.halfW, strip.halfW]) {
+          const [fx, fz] = at(sx, k);
+          b.put('fabric', boxGeo(0.4, 0.3, 0.05), fx, gh(fx, fz) + 0.5, fz, strip.angle, k % 24 === 0 ? '#f2f0ea' : '#c42b2b', { uvScale: 0 });
+        }
+      }
+      for (const end of [-1, 1]) {
+        for (let i = -3; i <= 3; i += 1) {
+          const [tx, tz] = at(i * (strip.halfW / 3.6), end * (strip.halfL - 2));
+          b.put('plaster', boxGeo(0.8, 0.12, 1.6), tx, gh(tx, tz) + 0.04, tz, strip.angle, '#f1ece2', { uvScale: 0 });
+        }
+      }
+    }
+    // the douar strip: a fuel drum store and a shelter of palm fronds for the mechanic
+    {
+      const s = DOUAR_STRIP;
+      // beside the runway, a third of the way along (strip frame -> world)
+      const lx = s.halfW + 7;
+      const lz = -s.halfL * 0.45;
+      const sx = s.x + lx * Math.cos(s.angle) + lz * Math.sin(s.angle);
+      const sz = s.z - lx * Math.sin(s.angle) + lz * Math.cos(s.angle);
+      const sg = gh(sx, sz);
+      for (let i = 0; i < 3; i += 1) barrel(ctx, sx - 1 + i * 0.9, gh(sx - 1 + i * 0.9, sz - 2.4), sz - 2.4, '#5a4a2c');
+      for (const [ox, oz] of [[-1.6, -1.2], [1.6, -1.2], [-1.6, 1.2], [1.6, 1.2]] as const) {
+        b.put('wood', cylGeo(0.07, 0.08, 2.4, 6), sx + ox, sg + 1.2, sz + oz, 0, '#5a3a24');
+        this.collision.addCircle(sx + ox, sz + oz, 0.1, sg - 1, sg + 2.4, false, 'post');
+      }
+      b.put('foliage', boxGeo(3.8, 0.18, 3), sx, sg + 2.45, sz, 0, '#8a7a3a', { uvScale: 1 }, 0.08);
+      this.addLoot('douar-strip-store', new THREE.Vector3(sx, sg, sz), { powder: 1, scrap: 2, cloth: 1 }, L("Search the mechanic's shelter", 'فتّش عشّة الميكانيسيان'));
     }
     this.enemySpawns.push(
       { id: 'a-guard1', faction: 'french', rank: 'soldier', zone: 'post', x: hx - 3, z: hz - 9, patrol: [[hx - 3, hz - 9], [ax + 4, az + 10], [ax + 4, az - 20]] },

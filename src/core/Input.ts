@@ -22,6 +22,9 @@ export type Action =
   | 'weapon5'
   | 'weapon6'
   | 'weapon7'
+  | 'weapon8'
+  | 'view'
+  | 'lookBack'
   | 'craft'
   | 'drink'
   | 'eat'
@@ -54,7 +57,10 @@ const KEYMAP: Record<string, Action> = {
   Digit5: 'weapon5',
   Digit6: 'weapon6',
   Digit7: 'weapon7',
+  Digit8: 'weapon8',
   KeyK: 'craft',
+  KeyV: 'view',
+  KeyB: 'lookBack',
   KeyQ: 'drink',
   KeyF: 'eat',
   KeyH: 'heal',
@@ -69,6 +75,9 @@ const KEYMAP: Record<string, Action> = {
 export class Input {
   private readonly held = new Set<Action>();
   private readonly pressedSet = new Set<Action>();
+  /** physical keys by `KeyboardEvent.code`, for the cockpit (numpad stick, flaps, trim, engine) */
+  private readonly keys = new Set<string>();
+  private readonly keysPressed = new Set<string>();
   lookX = 0;
   lookY = 0;
   wheel = 0;
@@ -77,6 +86,9 @@ export class Input {
   onLockChange: ((locked: boolean) => void) | null = null;
 
   private readonly onKeyDown = (e: KeyboardEvent) => {
+    if (!e.repeat) this.keysPressed.add(e.code);
+    this.keys.add(e.code);
+    if (e.code.startsWith('Numpad')) e.preventDefault();
     const a = KEYMAP[e.code];
     if (!a) return;
     if (e.code === 'Tab' || e.code === 'Space' || e.code.startsWith('Arrow') || e.code === 'ControlLeft') e.preventDefault();
@@ -85,6 +97,7 @@ export class Input {
   };
 
   private readonly onKeyUp = (e: KeyboardEvent) => {
+    this.keys.delete(e.code);
     const a = KEYMAP[e.code];
     if (a) this.held.delete(a);
   };
@@ -126,6 +139,7 @@ export class Input {
 
   private readonly onBlur = () => {
     this.held.clear();
+    this.keys.clear();
   };
 
   private readonly onContext = (e: Event) => e.preventDefault();
@@ -156,6 +170,15 @@ export class Input {
     if (document.pointerLockElement) document.exitPointerLock();
   }
 
+  /** Physical key held, by `KeyboardEvent.code` (e.g. 'Numpad8', 'KeyF'). */
+  keyHeld(...codes: string[]): boolean {
+    return codes.some((c) => this.keys.has(c));
+  }
+
+  keyPressed(...codes: string[]): boolean {
+    return codes.some((c) => this.keysPressed.has(c));
+  }
+
   isHeld(a: Action): boolean {
     return this.held.has(a);
   }
@@ -181,6 +204,7 @@ export class Input {
 
   endFrame(): void {
     this.pressedSet.clear();
+    this.keysPressed.clear();
     this.wheel = 0;
   }
 

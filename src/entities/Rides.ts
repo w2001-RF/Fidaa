@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { L, type Text } from '../i18n';
 import { clamp } from '../utils/noise';
 import type { CollisionWorld } from '../world/Collision';
-import { AIRSTRIP, LAKE, RAIL_LENGTH, railAt, zone } from '../world/layout';
+import { AIRSTRIP, LAKE, RAIL_LENGTH, distToRoads, railAt, stripAt, zone } from '../world/layout';
 import type { Terrain } from '../world/Terrain';
 import { buildPart as part, mergeParts as merge } from './Wildlife';
 
@@ -32,12 +32,50 @@ export const RIDES: Record<RideKind, RideDef> = {
   horse: { name: L('Barb horse', 'العود البربري'), max: 7.5, boost: 13, reverse: 1.5, accel: 5, turn: 2.3, radius: 0.7, seat: [0, 1.5, -0.1], cam: 2.2, camH: 0.9, stealth: 1.25, reach: 2.4 },
   camel: { name: L('Camel', 'الجمل'), max: 7, boost: 9, reverse: 1, accel: 2.6, turn: 1.6, radius: 0.85, seat: [0, 2.15, -0.25], cam: 2.8, camH: 1.3, stealth: 1.3, reach: 2.6 },
   jeep: { name: L('Willys jeep', 'جيب ويليس'), max: 19, boost: 23, reverse: 6, accel: 7, turn: 1.7, radius: 1.5, seat: [-0.38, 0.75, 0.05], cam: 4, camH: 0.6, stealth: 1.6, reach: 3 },
-  boat: { name: L('Fishing boat', 'الفلوكة'), max: 4.2, boost: 5, reverse: 1.5, accel: 1.6, turn: 1.1, radius: 1.2, seat: [0, 0.3, -0.4], cam: 2.5, camH: 0.6, stealth: 1, reach: 3.2 },
+  boat: { name: L('Fishing boat', 'الفلوكة'), max: 4.2, boost: 5, reverse: 1.5, accel: 2.2, turn: 1.1, radius: 1.2, seat: [0, 0.3, -0.4], cam: 2.5, camH: 0.6, stealth: 1, reach: 3.2 },
   train: { name: L('The train', 'الماشينا'), max: 11, boost: 14, reverse: 6, accel: 2, turn: 0, radius: 2, seat: [0, 1.55, -2.1], cam: 7, camH: 1.8, stealth: 1, reach: 4.5 },
-  plane: { name: L('Liaison plane', 'الطيارة'), max: 0, boost: 0, reverse: 0, accel: 0, turn: 0.75, radius: 4, seat: [0, 1.25, 0.35], cam: 9, camH: 1.6, stealth: 2, reach: 4 },
+  plane: { name: L('MS.500 Criquet', 'طيارة الكريكي'), max: 0, boost: 0, reverse: 0, accel: 0, turn: 0.75, radius: 4, seat: [0, 1.25, 0.35], cam: 9, camH: 1.6, stealth: 2, reach: 4 },
 };
 
-export type Controls = { f: boolean; b: boolean; l: boolean; r: boolean; boost: boolean; up: boolean; down: boolean };
+/** A solid circle in the XZ plane (rides, characters, animals). */
+export type Body = { x: number; z: number; r: number; y0: number; y1: number };
+
+/** Ride footprints as circles in ride space (x right, z forward): [x, z, r, top above the ground]. */
+const FOOTPRINT: Record<RideKind, [number, number, number, number][]> = {
+  donkey: [[0, -0.45, 0.36, 1.3], [0, 0, 0.36, 1.3], [0, 0.5, 0.33, 1.5]],
+  mule: [[0, -0.5, 0.38, 1.4], [0, 0, 0.38, 1.4], [0, 0.55, 0.35, 1.6]],
+  horse: [[0, -0.62, 0.42, 1.7], [0, 0, 0.42, 1.7], [0, 0.66, 0.38, 2]],
+  camel: [[0, -0.66, 0.46, 2.2], [0, 0, 0.46, 2.4], [0, 0.7, 0.42, 2.2], [0, 1.3, 0.3, 2.6]],
+  jeep: [[0, -1.05, 0.8, 1.6], [0, 0, 0.8, 1.6], [0, 1.05, 0.8, 1.6]],
+  boat: [],
+  train: [],
+  plane: [[0, 2.3, 0.55, 2.2], [0, 1.2, 0.5, 2.4], [0.95, 1.2, 0.3, 1], [-0.95, 1.2, 0.3, 1], [0, 0, 0.45, 2.4], [0, -1.4, 0.38, 2], [0, -2.7, 0.3, 2], [1.2, -3.4, 0.5, 2], [-1.2, -3.4, 0.5, 2]],
+};
+
+/**
+ * Cockpit inputs, GTA-style on the keyboard: W/S throttle, A/D rudder,
+ * numpad 4/6 (or ←/→) ailerons, numpad 8/5 (or ↑/↓) elevator: 8 pushes the
+ * nose down, 5 pulls it up.
+ */
+export type PlaneControls = {
+  /** throttle lever: +1 opening, -1 closing */
+  throttle: number;
+  /** stick back (+1, nose up) / forward (-1) */
+  elevator: number;
+  /** stick right (+1, right wing down) / left (-1) */
+  aileron: number;
+  /** right pedal (+1) / left pedal (-1) */
+  rudder: number;
+  brake: boolean;
+  /** flap lever this frame: +1 one notch down, -1 one notch up */
+  flaps: number;
+  /** trim wheel: +1 nose-up, -1 nose-down (held) */
+  trim: number;
+  /** engine switch pressed this frame */
+  engine: boolean;
+};
+
+export type Controls = { f: boolean; b: boolean; l: boolean; r: boolean; boost: boolean; up: boolean; down: boolean; plane?: PlaneControls };
 
 export type Ride = {
   id: string;
@@ -66,9 +104,103 @@ export type Ride = {
   flying: boolean;
   crashed: boolean;
   crashReason: string;
+  /** front-wheel angle (jeep) */
+  steer: number;
+  /** sideways velocity: tyres or hooves sliding (m/s, + = to the right) */
+  slip: number;
+  /** flight-path angle: climb (+) or descent (-) of the velocity (rad) */
+  gamma: number;
+  /** a mount's wind for galloping, 0..1 */
+  stamina: number;
+  /** visual body pitch / roll from braking, accelerating and cornering */
+  lean: { pitch: number; roll: number };
+  /** last frame's longitudinal acceleration, for the lean */
+  accel: number;
+  stalled: boolean;
+  braking: boolean;
+  // ---- Criquet cockpit
+  engineOn: boolean;
+  /** seconds left on the starter */
+  starting: number;
+  /** engine speed, 0..1 of 2050 rpm */
+  rpm: number;
+  /** flap lever notch 0..3 (0°, 15°, 30°, 40°) and the flaps' actual travel 0..1 */
+  flapNotch: number;
+  flapPos: number;
+  /** elevator trim -1..1 */
+  trim: number;
+  /** sideslip: nose heading minus flight track (rad) */
+  beta: number;
+  /** which wing drops in a stall */
+  wingDrop: number;
+  /** S brought it to a stop: it stays stopped until S is pressed again, which then reverses */
+  brakeHold: boolean;
+};
+
+/** Flight model constants (3-DOF point mass: lift, drag, thrust, gravity). */
+/**
+ * Morane-Saulnier MS.500 Criquet, the French-built Fieseler Storch the French
+ * army flew in 1945 (Argus As 10, 240 hp, 2,050 rpm). Tuned to its real
+ * figures: top speed 175 km/h, cruise 150 km/h at about 65% power, stall
+ * 70 km/h clean and 51 km/h with the slotted flaps at 40°, climb 4.8 m/s, a
+ * take-off run under 100 m, a landing roll of a few dozen metres.
+ */
+const AIR = {
+  /** lift and drag per (m/s)², per unit coefficient: wing area × air density / 2 / mass */
+  k: 0.01737,
+  cl0: 0.25,
+  /** lift slope per radian of angle of attack */
+  cla: 4.6,
+  /** stall angle of attack, about 17° thanks to the fixed leading-edge slats */
+  stall: 0.3,
+  /** extra lift and drag at each flap notch: 0°, 15°, 30°, 40° */
+  flapCl: [0, 0.45, 0.9, 1.3],
+  flapCd: [0, 0.012, 0.03, 0.06],
+  cd0: 0.036,
+  induced: 0.055,
+  /** static thrust (m/s²) at full power; the propeller's thrust fades toward `propV` */
+  thrust: 4.1,
+  propV: 80,
+  /** angle of attack the aircraft settles to with neutral trim and the stick let go */
+  trim: 0.05,
+  /** the tail-down attitude standing on its three wheels */
+  groundAttitude: 0.21,
+  /** rolling resistance on packed earth / rough ground, and full braking, as fractions of g */
+  rollStrip: 0.05,
+  rollRough: 0.1,
+  brake: 0.45,
+  /** the undercarriage takes this sink rate (m/s) and no more */
+  maxSink: 3.5,
+  rpmMax: 2050,
+  g: 9.81,
+};
+
+/** Grip and resistance of the ground under wheels and hooves. */
+const GROUND = {
+  /** cornering grip (m/s²) on a road and off it */
+  gripRoad: 7.5,
+  gripDirt: 5,
+  /** rolling resistance (m/s²) on a road and in sand / scrub */
+  rollRoad: 0.35,
+  rollDirt: 1.2,
+  /** air drag per (m/s)² */
+  drag: 0.0012,
 };
 
 const FWD = new THREE.Vector3();
+const TMP = new THREE.Vector3();
+
+/** Push a circle at `p` out of a solid body. */
+function pushCircle(p: THREE.Vector3, r: number, o: Body): void {
+  const dx = p.x - o.x;
+  const dz = p.z - o.z;
+  const min = r + o.r;
+  const d2 = dx * dx + dz * dz;
+  if (d2 >= min * min) return;
+  const d = Math.sqrt(d2) || 1e-4;
+  p.x = o.x + (dx / d) * min;
+  p.z = o.z + (dz / d) * min;
+}
 /** the loco never backs further than this: its two cars trail 8.4 m apart behind it */
 const TRAIN_MIN_S = 30;
 const UP = new THREE.Vector3(0, 1, 0);
@@ -84,6 +216,8 @@ export class Rides {
   onCrash: ((r: Ride) => void) | null = null;
   /** plane came to rest after a landing */
   onLand: ((r: Ride) => void) | null = null;
+  /** a driven ride hit something solid at `speed` m/s */
+  onImpact: ((r: Ride, speed: number) => void) | null = null;
   private readonly mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: 0.05 });
   private readonly q = new THREE.Quaternion();
   private readonly q2 = new THREE.Quaternion();
@@ -99,14 +233,14 @@ export class Rides {
     const o = zone('oasis');
     const k = zone('kasbah');
     const p = zone('post');
-    this.add('donkey', d.x - 18, d.z + 2, 0.8);
+    this.add('donkey', d.x - 22, d.z + 14, 0.8); // tethered in the open by the douar, clear of walls and jars
     this.add('mule', o.x + 16, o.z - 10, -2.2);
     this.add('horse', k.x - 12, k.z - 11, 0); // the Caïd's stables
     this.add('camel', 46, 170, 2.6); // nomad camp
     this.add('jeep', p.x - 14, p.z - 40, Math.PI * 0.9); // outside the post gate
     this.add('boat', LAKE.x + LAKE.water - 3, LAKE.z + 2.6, -Math.PI / 2);
     this.add('train', 0, 0, 0);
-    this.add('plane', AIRSTRIP.x, AIRSTRIP.z + AIRSTRIP.halfL - 8, Math.PI);
+    this.add('plane', AIRSTRIP.x, AIRSTRIP.z - AIRSTRIP.halfL + 8, 0); // by the hangar at the south end, facing up the open valley
   }
 
   private add(kind: RideKind, x: number, z: number, yaw: number): void {
@@ -137,6 +271,23 @@ export class Rides {
       flying: false,
       crashed: false,
       crashReason: '',
+      steer: 0,
+      slip: 0,
+      gamma: 0,
+      stamina: 1,
+      lean: { pitch: 0, roll: 0 },
+      accel: 0,
+      stalled: false,
+      braking: false,
+      brakeHold: false,
+      engineOn: false,
+      starting: 0,
+      rpm: 0,
+      flapNotch: 0,
+      flapPos: 0,
+      trim: 0,
+      beta: 0,
+      wingDrop: 1,
     };
     this.build(r);
     if (kind === 'boat') r.pos.y = LAKE.level;
@@ -161,6 +312,18 @@ export class Rides {
     r.throttle = 0;
     r.flying = false;
     r.crashed = false;
+    r.steer = 0;
+    r.slip = 0;
+    r.gamma = 0;
+    r.stamina = 1;
+    r.stalled = false;
+    r.engineOn = false;
+    r.starting = 0;
+    r.rpm = 0;
+    r.flapNotch = 0;
+    r.flapPos = 0;
+    r.trim = 0;
+    r.beta = 0;
     this.place(r);
   }
 
@@ -178,6 +341,35 @@ export class Rides {
     if (r.kind === 'train') return Math.abs(r.speed) < 1.5;
     return Math.abs(r.speed) < 3.5;
   }
+
+  /**
+   * Solid footprints of every ride except `skip` (the one being driven), so
+   * people walk round a parked jeep or the train instead of through it.
+   */
+  bodies(skip: Ride | null, out: Body[]): Body[] {
+    for (const r of this.rides) {
+      if (r === skip || (r.kind === 'plane' && r.flying)) continue;
+      if (r.kind === 'train') {
+        // each car: 2.1-2.3 m wide, 7 m long, on its own bit of curve
+        for (const car of r.cars) {
+          const a = car.rotation.y;
+          for (const lz of [-2.6, -0.9, 0.9, 2.6]) {
+            out.push({ x: car.position.x + Math.sin(a) * lz, z: car.position.z + Math.cos(a) * lz, r: 1.15, y0: car.position.y, y1: car.position.y + 3 });
+          }
+        }
+        continue;
+      }
+      const c = Math.cos(r.yaw);
+      const s = Math.sin(r.yaw);
+      for (const [lx, lz, rad, top] of FOOTPRINT[r.kind]) {
+        out.push({ x: r.pos.x + lx * c + lz * s, z: r.pos.z - lx * s + lz * c, r: rad, y0: r.pos.y, y1: r.pos.y + top });
+      }
+    }
+    return out;
+  }
+
+  /** Characters and animals the driven ride bumps into this frame (set by Game). */
+  obstacles: Body[] = [];
 
   /** A safe spot beside the ride to put the player down. */
   exitPoint(r: Ride, out: THREE.Vector3): THREE.Vector3 {
@@ -219,42 +411,173 @@ export class Rides {
 
   // ---------------------------------------------------------------- movement
 
-  private updateGround(r: Ride, dt: number, c: Controls | null): void {
+private updateGround(r: Ride, dt: number, c: Controls | null): void {
     const def = RIDES[r.kind];
-    const target = !c ? 0 : c.f ? (c.boost ? def.boost : def.max) : c.b ? -def.reverse : 0;
-    const rate = (target === 0 ? def.accel * 1.6 : def.accel) * (c?.down ? 3 : 1);
-    r.speed += clamp(target - r.speed, -rate * dt, rate * dt);
-    if (c) {
-      const steer = (c.l ? 1 : 0) - (c.r ? 1 : 0);
-      const k = r.kind === 'jeep' ? clamp(r.speed / 5, -1, 1) : 1;
-      r.yaw += steer * def.turn * dt * k;
+    const car = r.kind === 'jeep';
+    const fx = Math.sin(r.yaw);
+    const fz = Math.cos(r.yaw);
+    const onRoad = distToRoads(r.pos.x, r.pos.z) < 3;
+    const v0 = r.speed;
+
+    // ---- longitudinal: engine or legs, brakes, rolling resistance, drag, the slope
+    let a = 0;
+    r.braking = false;
+    // a mount gallops only while it has the wind for it
+    const canBoost = Boolean(c?.boost) && (car || r.stamina > 0.05);
+    const top = canBoost ? def.boost : def.max;
+    if (c?.f) {
+      if (r.speed < -0.3) {
+        a += def.accel * 1.6; // brake out of reverse
+        r.braking = true;
+      } else a += def.accel * Math.max(0, 1 - (r.speed / top) ** 2) - (r.speed > top ? (r.speed - top) * 0.8 : 0);
+    } else if (c?.b) {
+      if (r.speed > 0.4) {
+        a -= car ? 8.5 : def.accel * 1.8; // brakes / pull up
+        r.braking = true;
+        r.brakeHold = true;
+      } else if (r.brakeHold) {
+        // stopped on the brake; let go of S and press it again to back up
+        r.speed = 0;
+        r.braking = true;
+      } else a -= def.accel * 0.7 * Math.max(0, 1 - (r.speed / -def.reverse) ** 2);
+    } else if (!car || !c) {
+      // the animal slows by itself; nobody at the wheel means the parking brake is on
+      a -= Math.sign(r.speed) * Math.min(Math.abs(r.speed) / dt, car ? 8.5 : def.accel * 1.2);
     }
-    if (Math.abs(r.speed) < 0.01) return;
+    if (!c?.b) r.brakeHold = false;
+    if (c?.up && car) {
+      // handbrake (Space): rear wheels locked
+      a -= Math.sign(r.speed) * 4;
+      r.braking = true;
+    }
+    const roll = car ? (onRoad ? GROUND.rollRoad : GROUND.rollDirt) : 0.25;
+    a -= Math.sign(r.speed) * roll + GROUND.drag * r.speed * Math.abs(r.speed);
+    // gravity along the slope: climbing costs speed, descending adds it
+    const ahead = this.terrain.getHeight(r.pos.x + fx, r.pos.z + fz);
+    const behind = this.terrain.getHeight(r.pos.x - fx, r.pos.z - fz);
+    const grade = (ahead - behind) / 2;
+    if (c) a -= AIR.g * grade * (car ? 0.85 : 0.45);
+    let v = r.speed + a * dt;
+    if (r.brakeHold && c?.b && r.speed === 0) v = 0; // the brake holds on a slope
+    // friction can stop, never reverse
+    if (!c?.f && !c?.b && Math.sign(v) !== Math.sign(r.speed) && r.speed !== 0) v = 0;
+    if (Math.abs(v) < 0.02 && !c?.f && !c?.b) v = 0;
+    r.speed = v;
+    r.accel = (r.speed - v0) / Math.max(dt, 1e-4);
+    if (!car) {
+      if (canBoost && c?.f && r.speed > def.max * 0.9) r.stamina = Math.max(0, r.stamina - dt / 12);
+      else r.stamina = Math.min(1, r.stamina + dt / (Math.abs(r.speed) < 0.5 ? 6 : 18));
+    }
+
+    // ---- steering
+    const input = c ? (c.l ? 1 : 0) - (c.r ? 1 : 0) : 0;
+    const sp = Math.abs(r.speed);
+    let yawRate: number;
+    if (car) {
+      // front wheels turn at a finite rate; less lock at speed. Bicycle model on a 2.1 m wheelbase
+      const lock = 0.6 / (1 + (sp * sp) / 260);
+      const want = input * lock;
+      r.steer += clamp(want - r.steer, -2.2 * dt, 2.2 * dt);
+      yawRate = (r.speed * Math.tan(r.steer)) / 2.1;
+      // the tyres hold only so much: past the grip, the jeep runs wide and slides
+      const grip = (onRoad ? GROUND.gripRoad : GROUND.gripDirt) * (c?.up ? 0.45 : 1);
+      const lat = Math.abs(yawRate * r.speed);
+      if (lat > grip) {
+        const keep = grip / lat;
+        r.slip += Math.sign(yawRate) * Math.sign(r.speed) * (lat - grip) * dt * (c?.up ? 1.4 : 0.6);
+        yawRate *= c?.up ? 1.25 : keep; // handbrake swings the tail, otherwise understeer
+      }
+    } else {
+      // a mount pivots freely at a walk and needs room to turn at a gallop
+      yawRate = input * def.turn * (1 / (1 + sp / (def.max * 1.6))) * (r.speed < -0.1 ? -0.6 : 1);
+    }
+    r.yaw += yawRate * dt;
+    // sideways slide bleeds off through the tyres or hooves
+    const bleed = (car ? (onRoad ? GROUND.gripRoad : GROUND.gripDirt) : 8) * dt;
+    r.slip = Math.abs(r.slip) <= bleed ? 0 : r.slip - Math.sign(r.slip) * bleed;
+    const latAcc = yawRate * r.speed;
+    r.lean.roll += (clamp(latAcc * (car ? 0.018 : 0.03), -0.12, 0.12) - r.lean.roll) * Math.min(1, dt * 6);
+    r.lean.pitch += (clamp(-r.accel * 0.012, -0.08, 0.08) - r.lean.pitch) * Math.min(1, dt * 6);
+
+    if (Math.abs(r.speed) < 0.01 && Math.abs(r.slip) < 0.01) return;
     const ox = r.pos.x;
     const oz = r.pos.z;
-    r.pos.x += Math.sin(r.yaw) * r.speed * dt;
-    r.pos.z += Math.cos(r.yaw) * r.speed * dt;
-    this.collision.resolveCircle(r.pos, def.radius, 1.8);
+    const nfx = Math.sin(r.yaw);
+    const nfz = Math.cos(r.yaw);
+    r.pos.x += (nfx * r.speed + nfz * r.slip) * dt;
+    r.pos.z += (nfz * r.speed - nfx * r.slip) * dt;
+
+    // ---- collisions: the body is a row of circles, front, middle and back
+    const want = { x: r.pos.x, z: r.pos.z };
+    const len = car ? 1.05 : 0.45;
+    const rad = car ? 0.85 : def.radius * 0.7;
+    for (const off of [len, 0, -len]) {
+      TMP.set(r.pos.x + nfx * off, r.pos.y, r.pos.z + nfz * off);
+      const bx = TMP.x;
+      const bz = TMP.z;
+      this.collision.resolveCircle(TMP, rad, 1.8);
+      for (const o of this.obstacles) {
+        if (o.y1 < r.pos.y + 0.3 || o.y0 > r.pos.y + 2) continue;
+        pushCircle(TMP, rad, o);
+      }
+      r.pos.x += TMP.x - bx;
+      r.pos.z += TMP.z - bz;
+    }
+    const pushed = Math.hypot(r.pos.x - want.x, r.pos.z - want.z);
+    if (pushed > 1e-3) {
+      // how much of our velocity went into the obstacle
+      const nx = (r.pos.x - want.x) / pushed;
+      const nz = (r.pos.z - want.z) / pushed;
+      const vx = nfx * r.speed + nfz * r.slip;
+      const vz = nfz * r.speed - nfx * r.slip;
+      const vn = vx * nx + vz * nz;
+      if (vn < -2) {
+        // an impact: keep the motion along the obstacle, lose the part into it (a little bounce when hard).
+        // Gentle contact needs nothing: the push above already turns it into a slide along the wall.
+        const into = -vn;
+        if (into > 4) this.onImpact?.(r, into);
+        const k = 1 + (into > 4 ? 0.2 : 0);
+        const wx = vx - k * vn * nx;
+        const wz = vz - k * vn * nz;
+        r.speed = wx * nfx + wz * nfz;
+        r.slip = wx * nfz - wz * nfx;
+      }
+    }
     // no wading into the lake, no climbing cliffs, stay inside the mountains
-    const tooSteep = this.terrain.getSlope(r.pos.x, r.pos.z) > (r.kind === 'jeep' ? 0.9 : 1.15);
+    const tooSteep = this.terrain.getSlope(r.pos.x, r.pos.z) > (car ? 0.9 : 1.15);
     const wet = Math.hypot(r.pos.x - LAKE.x, r.pos.z - LAKE.z) < LAKE.water - 0.5;
     if (tooSteep || wet || Math.hypot(r.pos.x, r.pos.z) > 228) {
       r.pos.x = ox;
       r.pos.z = oz;
-      r.speed *= 0.3;
+      if (Math.abs(r.speed) > 4) this.onImpact?.(r, Math.abs(r.speed) * 0.6);
+      r.speed *= -0.1;
+      r.slip = 0;
     }
-    const moved = Math.hypot(r.pos.x - ox, r.pos.z - oz);
-    if (moved < Math.abs(r.speed) * dt * 0.35) r.speed *= 0.6; // ran into something
     r.pos.y = this.terrain.getHeight(r.pos.x, r.pos.z);
   }
 
-  private updateBoat(r: Ride, dt: number, c: Controls | null): void {
+private updateBoat(r: Ride, dt: number, c: Controls | null): void {
     const def = RIDES.boat;
-    const target = !c ? 0 : c.f ? (c.boost ? def.boost : def.max) : c.b ? -def.reverse : 0;
-    r.speed += clamp(target - r.speed, -def.accel * dt, def.accel * dt);
-    if (c) r.yaw += ((c.l ? 1 : 0) - (c.r ? 1 : 0)) * def.turn * dt;
-    r.pos.x += Math.sin(r.yaw) * r.speed * dt;
-    r.pos.z += Math.cos(r.yaw) * r.speed * dt;
+    // oars give thrust in strokes; water drag grows with speed; the hull carries way and drifts
+    const stroke = 0.55 + 0.45 * Math.max(0, Math.sin(r.phase * 2.2));
+    let a = 0;
+    if (c?.f) a += def.accel * stroke * (c.boost ? 1.25 : 1);
+    if (c?.b) a -= def.accel * 0.8 * stroke;
+    a -= 0.35 * r.speed * Math.abs(r.speed) + 0.08 * r.speed;
+    const v0 = r.speed;
+    r.speed = clamp(r.speed + a * dt, -def.reverse, def.boost);
+    r.accel = (r.speed - v0) / Math.max(dt, 1e-4);
+    // rowing one side turns her even at rest; a rudder-like bite once she has way on
+    const input = c ? (c.l ? 1 : 0) - (c.r ? 1 : 0) : 0;
+    const yawRate = input * def.turn * (0.45 + 0.55 * Math.min(1, Math.abs(r.speed) / 2));
+    r.yaw += yawRate * dt;
+    // a turn throws the hull sideways, the keel slowly kills it
+    r.slip += -yawRate * r.speed * 0.25 * dt;
+    r.slip -= r.slip * Math.min(1, dt * 1.2);
+    const fx = Math.sin(r.yaw);
+    const fz = Math.cos(r.yaw);
+    r.pos.x += (fx * r.speed + fz * r.slip) * dt;
+    r.pos.z += (fz * r.speed - fx * r.slip) * dt;
     const dx = r.pos.x - LAKE.x;
     const dz = r.pos.z - LAKE.z;
     const d = Math.hypot(dx, dz);
@@ -262,9 +585,13 @@ export class Rides {
     if (d > max) {
       r.pos.x = LAKE.x + (dx / d) * max;
       r.pos.z = LAKE.z + (dz / d) * max;
-      r.speed *= 0.3;
+      if (Math.abs(r.speed) > 2) this.onImpact?.(r, Math.abs(r.speed));
+      r.speed *= -0.2;
+      r.slip = 0;
     }
     r.phase += dt * (0.8 + Math.abs(r.speed));
+    r.lean.roll += (clamp(-r.slip * 0.15, -0.1, 0.1) + Math.sin(r.phase) * 0.03 - r.lean.roll) * Math.min(1, dt * 3);
+    r.lean.pitch += (clamp(-r.accel * 0.03, -0.05, 0.05) - r.lean.pitch) * Math.min(1, dt * 3);
     r.pos.y = LAKE.level + Math.sin(r.phase * 1.3) * 0.04;
   }
 
@@ -299,60 +626,235 @@ export class Rides {
     r.phase += dt * r.speed * 0.9;
   }
 
+/**
+   * Point-mass flight model: thrust, drag (parasite + induced), lift from the
+   * angle of attack with a stall past 16°, ground effect near the runway,
+   * coordinated banked turns (rate = g·tan(bank)/v), and pitch stability that
+   * returns the nose to the trimmed angle of attack when the stick is let go.
+   * W/S throttle (S also brakes on the ground), Space/C elevator, A/D ailerons.
+   */
+/**
+   * Flight model of the Criquet. Point-mass flight path (airspeed, climb angle,
+   * track) driven by lift, drag, propeller thrust and gravity, with the
+   * attitude flown by the controls:
+   * - elevator sets the pitch rate; the tail weathervanes the nose back to the
+   *   angle of attack set by the trim wheel, so pitch sets the speed and
+   *   throttle sets the climb;
+   * - ailerons roll the wings; a banked wing turns the track at g·tan(bank)/v;
+   * - rudder yaws the nose off the track (sideslip): it skids the track round,
+   *   rolls the wings through dihedral, and costs drag;
+   * - flaps add lift and drag; slats hold the stall to a high angle; ground
+   *   effect within a wingspan of the ground; the wing drops in a stall;
+   * - on the ground: a taildragger sitting tail-down, tailwheel steering with
+   *   the rudder, wheel brakes (with the rudder they pivot her), lift taking
+   *   weight off the wheels; brake hard with the tail up and she noses over.
+   */
   private updatePlane(r: Ride, dt: number, c: Controls | null): void {
     if (r.crashed) return;
+    const pc = c?.plane;
+    // ---- engine: starter, then the rpm follows the throttle
+    if (pc?.engine) {
+      if (r.engineOn || r.starting > 0) {
+        r.engineOn = false;
+        r.starting = 0;
+      } else r.starting = 1.4;
+    }
+    if (r.starting > 0) {
+      r.starting -= dt;
+      r.rpm = Math.max(r.rpm, 0.12 * (1 - r.starting / 1.4));
+      if (r.starting <= 0) r.engineOn = true;
+    }
+    if (pc) r.throttle = clamp(r.throttle + pc.throttle * dt * 0.8, 0, 1);
+    const rpmWant = r.engineOn ? 0.3 + 0.7 * r.throttle : 0;
+    r.rpm += (rpmWant - r.rpm) * Math.min(1, dt * (r.engineOn ? 2.2 : 0.8));
+    const power = r.engineOn ? Math.max(0, (r.rpm - 0.28) / 0.72) : 0;
+    // ---- flaps: a hand crank, so they take a few seconds to travel
+    if (pc?.flaps) r.flapNotch = clamp(r.flapNotch + pc.flaps, 0, 3);
+    r.flapPos += clamp(r.flapNotch / 3 - r.flapPos, -dt * 0.4, dt * 0.4);
+    if (pc) r.trim = clamp(r.trim + pc.trim * dt * 0.35, -1, 1);
+    const elevator = pc?.elevator ?? 0;
+    const aileron = pc?.aileron ?? 0;
+    const rudder = pc?.rudder ?? 0;
+    const brake = Boolean(pc?.brake);
+    const v = Math.max(0.01, r.speed);
     const ground = this.terrain.getHeight(r.pos.x, r.pos.z);
-    const pitchWant = c?.up ? 0.38 : c?.down ? -0.38 : 0;
+    const h = r.pos.y - ground;
+    // control authority grows with dynamic pressure
+    const q = clamp((v / 30) ** 2, 0, 1.6);
+    const thrust = AIR.thrust * power * Math.max(0, 1 - v / AIR.propV);
+
     if (!r.flying) {
-      // taxi and take-off run
-      const target = c?.f ? 34 : 0;
-      const rate = c?.b ? 12 : c?.f ? 6 : 4;
-      r.speed += clamp(target - r.speed, -rate * dt, rate * dt);
-      if (c) r.yaw += ((c.l ? 1 : 0) - (c.r ? 1 : 0)) * 0.6 * dt * clamp(r.speed / 4, 0, 1);
-      r.pitch += (0 - r.pitch) * Math.min(1, dt * 4);
-      if (c?.up && r.speed > 22) {
-        r.flying = true;
-        r.vy = 3;
-        r.throttle = 0.85;
-      }
+      // ---- taxi, take-off run, landing roll
+      r.braking = brake;
+      // tail down at rest; stick forward with speed lifts the tail; hard braking tips her forward
+      let attitude = AIR.groundAttitude;
+      if (elevator < 0) attitude += elevator * AIR.groundAttitude * clamp(q * 1.6, 0, 1.2);
+      if (brake) attitude -= 0.14 * clamp(v / 14, 0, 1);
+      r.pitch += (attitude - r.pitch) * Math.min(1, dt * 3);
+      const cl = this.liftCoef(r.pitch, 0, r.flapPos);
+      const lift = AIR.k * v * v * cl;
+      const drag = AIR.k * v * v * this.dragCoef(cl, r.flapPos, 0);
+      const weight = Math.max(0, 1 - lift / AIR.g); // fraction of the weight on the wheels
+      const rough = stripAt(r.pos.x, r.pos.z) || distToRoads(r.pos.x, r.pos.z) < 3 ? AIR.rollStrip : AIR.rollRough;
+      const resist = (rough + (brake ? AIR.brake : 0)) * AIR.g * weight;
+      const v0 = r.speed;
+      let a = thrust - drag;
+      if (r.speed > 0.05) a -= resist;
+      else a = Math.max(0, a - resist); // standing still: the engine must beat friction and brakes
+      r.speed = Math.max(0, r.speed + a * dt);
+      r.accel = (r.speed - v0) / Math.max(dt, 1e-4);
+      // tailwheel steering at taxi speed, the rudder in the slipstream and airflow above it;
+      // a brake and full rudder pivots her round on one wheel
+      const blast = clamp(power * 0.6 + v / 15, 0, 1.5);
+      const yawRate = -rudder * (0.55 * clamp(v / 3, 0, 1) * (v < 12 ? 1 : 12 / v) + 0.35 * blast * (brake ? 1.2 : 0.4));
+      r.yaw += yawRate * dt;
+      r.roll += (0 - r.roll) * Math.min(1, dt * 4);
+      r.beta = 0;
+      r.gamma = 0;
+      r.vy = 0;
+      r.stalled = false;
       r.pos.x += Math.sin(r.yaw) * r.speed * dt;
       r.pos.z += Math.cos(r.yaw) * r.speed * dt;
-      r.pos.y = ground;
-      if (this.collision.blockedAt(r.pos.x, r.pos.z, 1.5, ground) && r.speed > 8) this.crash(r, 'taxi obstacle');
+      r.pos.y = this.terrain.getHeight(r.pos.x, r.pos.z);
+      r.lean.pitch = 0;
+      if (r.pitch < -0.1 && r.speed > 6) {
+        this.crash(r, 'nosed over under braking');
+        return;
+      }
+      if (lift > AIR.g && r.speed > 12) {
+        r.flying = true;
+        r.gamma = 0.02;
+      }
+      if (this.collision.blockedAt(r.pos.x, r.pos.z, 1.5, r.pos.y) && r.speed > 6) this.crash(r, 'taxi obstacle');
       return;
     }
-    // airborne: arcade lift — speed above ~26 m/s climbs, below it sinks
-    if (c) {
-      if (c.f) r.throttle = Math.min(1, r.throttle + dt * 0.5);
-      if (c.b) r.throttle = Math.max(0.35, r.throttle - dt * 0.5);
-    }
-    r.speed += (r.throttle * 44 - r.speed) * 0.35 * dt;
-    r.pitch += (pitchWant - r.pitch) * Math.min(1, dt * 2.5);
-    const steer = c ? (c.l ? 1 : 0) - (c.r ? 1 : 0) : 0;
-    r.roll += (-steer * 0.55 - r.roll) * Math.min(1, dt * 3);
-    r.yaw += -r.roll * RIDES.plane.turn * dt * 1.8;
+
+    // ---- airborne
+    const alpha = r.pitch - r.gamma;
+    const cl = this.liftCoef(alpha, h, r.flapPos);
+    const lift = AIR.k * v * v * cl;
+    const drag = AIR.k * v * v * this.dragCoef(cl, r.flapPos, r.beta);
+    const wasStalled = r.stalled;
+    r.stalled = alpha > AIR.stall;
+    if (r.stalled && !wasStalled) r.wingDrop = Math.sin(r.pos.x * 12.9898 + r.pos.z * 78.233) > 0 ? 1 : -1;
+    const v0 = r.speed;
+    r.speed = Math.max(5, r.speed + (thrust - drag - AIR.g * Math.sin(r.gamma)) * dt);
+    r.accel = (r.speed - v0) / Math.max(dt, 1e-4);
+    r.gamma = clamp(r.gamma + ((lift * Math.cos(r.roll) - AIR.g * Math.cos(r.gamma)) / v) * dt, -1.3, 1.3);
+    // track: the banked lift turns it; sideslip skids it toward the nose
+    const track = r.yaw - r.beta;
+    const turn = (-lift * Math.sin(r.roll)) / (v * Math.max(0.2, Math.cos(r.gamma))) + r.beta * 0.7 * q;
+    // rudder yaws the nose off the track; the fin weathervanes it back; a little adverse yaw from the ailerons
+    r.beta += (-rudder * 0.55 * q - r.beta * 2.2 * Math.sqrt(q) + aileron * 0.04 * q) * dt;
+    r.beta = clamp(r.beta, -0.35, 0.35);
+    r.yaw = track + turn * dt + r.beta;
+    // elevator: pitch rate; tail stability back to the trimmed angle of attack (flaps pitch the nose down a little)
+    const alphaTrim = AIR.trim + r.trim * 0.12 - r.flapPos * 0.03;
+    r.pitch += (elevator * 0.5 * Math.min(q, 1.2) - (alpha - alphaTrim) * 1.8 * q) * dt;
+    if (r.stalled) r.pitch -= 0.4 * dt; // the nose drops
+    r.pitch = clamp(r.pitch, -1.1, 0.9);
+    // ailerons roll the wings; weak spiral stability levels them slowly; dihedral rolls away from sideslip
+    let rollRate = aileron * 1.25 * Math.min(q, 1.1) - r.beta * 0.9 * q;
+    if (aileron === 0) rollRate -= r.roll * 0.12;
+    if (r.stalled) rollRate += r.wingDrop * 0.9;
+    r.roll = clamp(r.roll + rollRate * dt, -1.3, 1.3);
     // keep inside the valley: turn back from the mountain wall
     if (Math.hypot(r.pos.x, r.pos.z) > 236) r.yaw += 1.2 * dt * Math.sign(Math.sin(Math.atan2(-r.pos.x, -r.pos.z) - r.yaw) || 1);
-    const climb = r.pitch * r.speed * 0.9 + (r.speed - 26) * 0.22;
-    r.vy += (climb - r.vy) * Math.min(1, dt * 2);
-    if (r.pos.y - ground > 160) r.vy = Math.min(r.vy, 0);
-    r.pos.x += Math.sin(r.yaw) * r.speed * dt * Math.cos(r.pitch);
-    r.pos.z += Math.cos(r.yaw) * r.speed * dt * Math.cos(r.pitch);
+    if (h > 160 && r.gamma > 0) r.gamma *= 1 - Math.min(1, dt * 2); // the valley's ceiling
+    r.vy = r.speed * Math.sin(r.gamma);
+    const horiz = r.speed * Math.cos(r.gamma);
+    const tr = r.yaw - r.beta;
+    r.pos.x += Math.sin(tr) * horiz * dt;
+    r.pos.z += Math.cos(tr) * horiz * dt;
     r.pos.y += r.vy * dt;
     r.phase += dt * 40;
     const g2 = this.terrain.getHeight(r.pos.x, r.pos.z);
     if (r.pos.y <= g2) {
-      // touchdown: gentle and level lands, anything else crashes
+      // touchdown: a gentle sink, wings level, not nose-first, not too fast
       const slope = this.terrain.getSlope(r.pos.x, r.pos.z);
-      if (-r.vy > 7 || r.speed > 44 || r.pitch < -0.25 || Math.abs(r.roll) > 0.45 || slope > 0.9) this.crash(r, `touchdown vy=${r.vy.toFixed(1)} v=${r.speed.toFixed(1)} pitch=${r.pitch.toFixed(2)} roll=${r.roll.toFixed(2)} slope=${slope.toFixed(2)}`);
-      else {
+      if (-r.vy > AIR.maxSink || r.speed > 45 || r.pitch < -0.1 || Math.abs(r.roll) > 0.3 || slope > 0.9) {
+        this.crash(r, `touchdown vy=${r.vy.toFixed(1)} v=${r.speed.toFixed(1)} pitch=${r.pitch.toFixed(2)} roll=${r.roll.toFixed(2)} slope=${slope.toFixed(2)}`);
+      } else {
         r.flying = false;
         r.pos.y = g2;
         r.vy = 0;
+        r.gamma = 0;
         r.roll = 0;
-        r.throttle = 0;
+        r.yaw = tr;
+        r.beta = 0;
       }
     } else if (r.pos.y - g2 < 6 && this.collision.blockedAt(r.pos.x, r.pos.z, 2, r.pos.y - 1)) this.crash(r, 'obstacle');
+  }
+
+  /** Lift coefficient: linear to the stall, then it falls away; ground effect within a wingspan. */
+/** Lift coefficient: linear to the stall, then it falls away; flaps add lift; ground effect within a wingspan. */
+  private liftCoef(alpha: number, h: number, flaps: number): number {
+    const flap = this.flapTable(AIR.flapCl, flaps);
+    const max = AIR.cl0 + AIR.cla * AIR.stall;
+    let cl = (alpha < AIR.stall ? AIR.cl0 + AIR.cla * alpha : max * Math.max(0.35, 1 - (alpha - AIR.stall) * 4)) + flap;
+    if (h < 14) cl *= 1 + 0.35 * (1 - Math.max(0, h) / 14);
+    return cl;
+  }
+
+  private dragCoef(cl: number, flaps: number, beta: number): number {
+    return AIR.cd0 + AIR.induced * cl * cl + this.flapTable(AIR.flapCd, flaps) + 0.4 * beta * beta;
+  }
+
+  /** Interpolate a per-notch table at flap travel 0..1. */
+  private flapTable(t: number[], pos: number): number {
+    const f = clamp(pos, 0, 1) * 3;
+    const i = Math.min(2, Math.floor(f));
+    return t[i] + (t[i + 1] - t[i]) * (f - i);
+  }
+
+  /** Trimmed level flight at `speed`: the angle of attack and throttle that hold it. */
+trimFor(r: Ride, speed: number, flaps = 0): void {
+    r.flapNotch = flaps;
+    r.flapPos = flaps / 3;
+    const flapCl = this.flapTable(AIR.flapCl, r.flapPos);
+    const cl = AIR.g / (AIR.k * speed * speed);
+    const alpha = clamp((cl - flapCl - AIR.cl0) / AIR.cla, -0.05, AIR.stall - 0.02);
+    const drag = AIR.k * speed * speed * this.dragCoef(cl, r.flapPos, 0);
+    r.pitch = alpha;
+    r.gamma = 0;
+    r.beta = 0;
+    r.trim = clamp((alpha - AIR.trim + r.flapPos * 0.03) / 0.12, -1, 1);
+    r.engineOn = true;
+    r.starting = 0;
+    r.throttle = clamp(drag / (AIR.thrust * Math.max(0.05, 1 - speed / AIR.propV)), 0, 1);
+    r.rpm = 0.3 + 0.7 * r.throttle;
+  }
+
+  /** Instruments for the HUD. */
+  gauges(r: Ride): {
+    speed: number;
+    alt: number;
+    vs: number;
+    throttle: number;
+    stall: boolean;
+    brake: boolean;
+    stamina: number;
+    rpm: number;
+    engine: 'off' | 'starting' | 'on';
+    flaps: number;
+    trim: number;
+    heading: number;
+  } {
+    return {
+      speed: Math.abs(r.speed),
+      alt: r.pos.y - this.terrain.getHeight(r.pos.x, r.pos.z),
+      vs: r.vy,
+      throttle: r.throttle,
+      stall: r.stalled || (r.flying && r.speed < 15.5 + (1 - r.flapPos) * 4),
+      brake: r.braking,
+      stamina: r.stamina,
+      rpm: Math.round(r.rpm * AIR.rpmMax),
+      engine: r.engineOn ? 'on' : r.starting > 0 ? 'starting' : 'off',
+      flaps: [0, 15, 30, 40][r.flapNotch],
+      trim: r.trim,
+      // compass: 0 = north (-z), clockwise
+      heading: (((Math.PI - r.yaw) * 180) / Math.PI + 360) % 360,
+    };
   }
 
   private crash(r: Ride, reason: string): void {
@@ -384,17 +886,18 @@ export class Rides {
     }
     r.root.position.copy(r.pos);
     if (r.kind === 'jeep' || (r.kind === 'plane' && !r.flying)) {
-      // sit on the slope
+      // sit on the slope; the body pitches under braking and rolls in corners
       this.terrain.normalAt(r.pos.x, r.pos.z, this.n);
       this.q.setFromUnitVectors(UP, this.n);
-      this.e.set(r.kind === 'plane' ? r.pitch * 0.3 : 0, r.yaw, r.kind === 'plane' ? r.roll : 0, 'YXZ');
+      // the model is drawn level: sitting on its tailwheel it rests 0.185 rad nose-up
+      this.e.set(r.kind === 'plane' ? -(r.pitch - AIR.groundAttitude + 0.185) : r.lean.pitch, r.yaw, r.kind === 'plane' ? r.roll : r.lean.roll, 'YXZ');
       this.q2.setFromEuler(this.e);
       r.root.quaternion.copy(this.q).multiply(this.q2);
     } else if (r.kind === 'plane') {
       this.e.set(-r.pitch, r.yaw, r.roll, 'YXZ');
       r.root.quaternion.setFromEuler(this.e);
     } else {
-      this.e.set(0, r.yaw, r.kind === 'boat' ? Math.sin(r.phase) * 0.03 : 0, 'YXZ');
+      this.e.set(r.lean.pitch, r.yaw, r.lean.roll, 'YXZ');
       r.root.quaternion.setFromEuler(this.e);
     }
   }
@@ -409,9 +912,14 @@ export class Rides {
         leg.rotation.x = Math.sin(r.phase * 2 + diag + (r.kind === 'camel' && i % 2 ? Math.PI / 2 : 0)) * amp;
       });
     }
-    for (const w of r.wheels) w.rotation.x += (r.speed / 0.4) * dt;
+    // wheels spin with the road speed; the front pair turns with the steering
+    r.wheels.forEach((w, i) => {
+      const tyre = w.children[0];
+      if (tyre) tyre.rotation.x += (r.speed / 0.38) * dt;
+      if (i < 2) w.rotation.y = r.steer;
+    });
     for (const [i, o] of r.oars.entries()) o.rotation.x = Math.sin(r.phase * 2.2) * 0.6 * Math.min(1, sp) * (i ? 1 : 1);
-    if (r.prop) r.prop.rotation.z += dt * (r.flying ? 60 : r.speed > 0.5 || r.throttle > 0 ? 30 : 0);
+    if (r.prop) r.prop.rotation.z += dt * r.rpm * 70;
     FWD.set(0, 0, 0);
   }
 

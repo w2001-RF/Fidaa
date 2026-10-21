@@ -32,6 +32,8 @@ export type SaveData = {
     /** fog-of-war bitmap, base64 of packed bits */
     fog?: string;
     harvested?: number[];
+    /** the player's camp pieces */
+    camp?: { kind: string; x: number; z: number; yaw: number }[];
     prisonOpened: boolean;
     carrying: boolean;
   };

@@ -226,3 +226,72 @@ test('save: IndexedDB keeps progress across a reload and Continue restores it', 
   expect(after.fogRevealed).toBeCloseTo(before.fogRevealed, 2);
   expect(errors).toEqual([]);
 });
+
+test('crossbow and camera views: silent bolts, first person, look behind', async ({ page }) => {
+  const errors: string[] = [];
+  await boot(page, errors);
+  await page.click('#btn-start');
+  await wait(page, 100);
+  await page.evaluate(() => {
+    const h = window.__THREE_GAME_TEST_HOOKS__;
+    h?.grantWeapon?.('crossbow');
+    h?.give?.({ wood: 2, scrap: 2 });
+  });
+  // bolts are whittled anywhere
+  await press(page, 'KeyK');
+  await click(page, page.locator('.recipe', { hasText: 'Crossbow bolts' }).locator('button'));
+  await press(page, 'KeyK');
+  let g = await game(page);
+  expect(g.inventory.bolt).toBeGreaterThanOrEqual(4);
+
+  // slot 8: one bolt in the tiller, fire, span again from the quiver
+  await press(page, 'Digit8');
+  await wait(page, 100);
+  g = await game(page);
+  expect(g.weapon).toBe('crossbow');
+  expect(g.clip).toBe(1);
+  await page.evaluate(() => window.__THREE_GAME_TEST_HOOKS__?.input?.('attack', true));
+  await wait(page, 80);
+  await page.evaluate(() => window.__THREE_GAME_TEST_HOOKS__?.input?.('attack', false));
+  await wait(page, 100);
+  expect((await game(page)).clip).toBe(0);
+  const bolts = (await game(page)).inventory.bolt;
+  await press(page, 'KeyR');
+  await wait(page, 2600);
+  g = await game(page);
+  expect(g.clip).toBe(1);
+  expect(g.inventory.bolt).toBe(bolts - 1);
+
+  type V = { firstPerson: boolean; lookBack: boolean; cam: { x: number; y: number; z: number }; yaw: number };
+  const view = () => page.evaluate(() => (window.__THREE_GAME_DIAGNOSTICS__?.game as unknown as { view: V }).view);
+  const pos = () => page.evaluate(() => window.__THREE_GAME_DIAGNOSTICS__!.player.position);
+  // the camera sits on the side the view direction points away from: dot < 0 behind, > 0 in front
+  const side = async () => {
+    const v = await view();
+    const p = await pos();
+    return (v.cam.x - p.x) * -Math.sin(v.yaw) + (v.cam.z - p.z) * -Math.cos(v.yaw);
+  };
+  expect(await side()).toBeLessThan(-1);
+
+  // B held: the camera swings round in front, looking back at Driss
+  await page.keyboard.down('KeyB');
+  await wait(page, 200);
+  expect((await view()).lookBack).toBe(true);
+  expect(await side()).toBeGreaterThan(1);
+  await page.keyboard.up('KeyB');
+  await wait(page, 200);
+  expect(await side()).toBeLessThan(-1);
+
+  // V: first person, the eye at head height on the body
+  await press(page, 'KeyV');
+  await wait(page, 200);
+  const v = await view();
+  const p = await pos();
+  expect(v.firstPerson).toBe(true);
+  expect(Math.hypot(v.cam.x - p.x, v.cam.z - p.z)).toBeLessThan(0.5);
+  expect(v.cam.y - p.y).toBeGreaterThan(1.2);
+  await press(page, 'KeyV');
+  await wait(page, 200);
+  expect((await view()).firstPerson).toBe(false);
+  expect(errors).toEqual([]);
+});

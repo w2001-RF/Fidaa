@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Noise2D, PeriodicNoise, clamp, lerp, smoothstep } from '../utils/noise';
-import { AIRSTRIP, LAKE, OUED, PLAY_RADIUS, RAIL, WORLD_HALF, ZONES, distToPolyline, distToRoads, zone } from './layout';
+import { LAKE, OUED, PLAY_RADIUS, RAIL, STRIPS, WORLD_HALF, ZONES, distToPolyline, distToRoads, distToStrip, zone } from './layout';
 
 const SEGMENTS = 256;
 const CELL = (WORLD_HALF * 2) / SEGMENTS;
@@ -132,11 +132,11 @@ export class Terrain {
       h = lerp(h, Math.min(h, smooth + h * 0.6), wr * 0.35);
     }
 
-    // Airstrip: flat dirt runway with soft shoulders
-    const ax = Math.max(0, Math.abs(x - AIRSTRIP.x) - AIRSTRIP.halfW);
-    const az = Math.max(0, Math.abs(z - AIRSTRIP.z) - AIRSTRIP.halfL);
-    const wa = 1 - smoothstep(0, 18, Math.hypot(ax, az));
-    if (wa > 0) h = lerp(h, AIRSTRIP.height, wa);
+    // Airstrips: flat dirt runways with soft shoulders
+    for (const strip of STRIPS) {
+      const wa = 1 - smoothstep(0, 18, distToStrip(strip, x, z));
+      if (wa > 0) h = lerp(h, strip.height, wa);
+    }
 
     // Lake: flattened shore, then a bowl below the water line
     const dl = Math.hypot(x - LAKE.x, z - LAKE.z);
@@ -235,9 +235,7 @@ export class Terrain {
         }
 
         // runway packed dirt, rail ballast, lake shore mud
-        const ax2 = Math.max(0, Math.abs(x - AIRSTRIP.x) - AIRSTRIP.halfW);
-        const az2 = Math.max(0, Math.abs(z - AIRSTRIP.z) - AIRSTRIP.halfL);
-        c.lerp(road, (1 - smoothstep(0, 3, Math.hypot(ax2, az2))) * 0.7);
+        for (const strip of STRIPS) c.lerp(road, (1 - smoothstep(0, 3, distToStrip(strip, x, z))) * 0.7);
         c.lerp(ballast, (1 - smoothstep(1.5, 3.2, distToPolyline(x, z, RAIL))) * 0.9);
         const dLake = Math.hypot(x - LAKE.x, z - LAKE.z);
         c.lerp(green, (1 - smoothstep(LAKE.water, LAKE.r + 14, dLake)) * 0.7);

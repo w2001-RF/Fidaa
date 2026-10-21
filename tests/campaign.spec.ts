@@ -106,9 +106,14 @@ test('campaign: all six missions can be completed to victory', async ({ page }) 
   await page.keyboard.press('KeyE');
   await wait(page, 300);
   expect((await game(page)).step).toBe(3);
-  // low, slow and level on the road north of the douar: she settles and rolls to a stop
-  await page.evaluate(() => window.__THREE_GAME_TEST_HOOKS__?.pilot?.(-149, 2.5, 70, Math.PI - Math.atan2(18, 60), 22));
+  // short final to the douar strip from the east: low, slow, full flap. S closes the throttle,
+  // she floats in ground effect and settles; Space brakes her to a stop on the strip
+  await page.evaluate(() => window.__THREE_GAME_TEST_HOOKS__?.pilot?.(22, 4, 118, -Math.PI / 2, 16, 3));
+  await page.keyboard.down('KeyS');
+  await page.keyboard.down('Space');
   await wait(page, 9000);
+  await page.keyboard.up('Space');
+  await page.keyboard.up('KeyS');
   await wait(page, 4500);
   await expect(page.locator('#victory-screen')).toBeVisible({ timeout: 8000 });
   expect((await game(page)).mission).toBe('done');

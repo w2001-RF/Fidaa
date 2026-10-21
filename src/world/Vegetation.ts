@@ -195,6 +195,11 @@ export class Vegetation {
     };
 
     const free = (x: number, z: number, r: number) => !reserved(x, z, r) && !collision.blockedAt(x, z, r, terrain.getHeight(x, z));
+    // trunks stop people, rides and bullets; leaves don't block sight (cover handles that)
+    const trunk = (h: Harvestable, r: number, height: number) => {
+      h.collider = collision.addCircle(h.x, h.z, r, h.y - 1, h.y + height, false, 'tree');
+      return h;
+    };
 
     // Palms along the oued and around the oasis + a few in the douar
     const oasis = zone('oasis');
@@ -205,7 +210,7 @@ export class Vegetation {
       const z = oasis.z + Math.sin(a) * r;
       if (!free(x, z, 1)) continue;
       const ps = 0.8 + rng() * 0.5;
-      harvest(add('palm', x, z, ps, -0.1, 0.25), 'tree', 'palm', x, z, ps);
+      trunk(harvest(add('palm', x, z, ps, -0.1, 0.25), 'tree', 'palm', x, z, ps), 0.3 * ps, 7 * ps);
     }
     for (let i = 0; i < 70; i += 1) {
       const seg = Math.floor(rng() * (OUED.length - 1));
@@ -221,7 +226,7 @@ export class Vegetation {
       const z = az + (bz - az) * t + (nz / nl) * off;
       if (Math.hypot(x, z) > PLAY_RADIUS - 4 || inSettlement(x, z, 2) || !free(x, z, 1)) continue;
       const ps = 0.7 + rng() * 0.5;
-      harvest(add('palm', x, z, ps, -0.1, 0.3), 'tree', 'palm', x, z, ps);
+      trunk(harvest(add('palm', x, z, ps, -0.1, 0.3), 'tree', 'palm', x, z, ps), 0.3 * ps, 7 * ps);
     }
 
     // Olive groves: between douar and medina, and around the douar
@@ -240,7 +245,7 @@ export class Vegetation {
         if (terrain.getSlope(x, z) > 0.45) continue;
         const os = 0.85 + rng() * 0.45;
         const cov = { x, z, r: 2.4 };
-        harvest(add('olive', x, z, os), 'tree', 'olive', x, z, os).cover = cov;
+        trunk(harvest(add('olive', x, z, os), 'tree', 'olive', x, z, os), 0.42 * os, 2.6 * os).cover = cov;
         this.cover.push(cov);
       }
     }
@@ -258,11 +263,13 @@ export class Vegetation {
         if (!free(x, z, 1.2)) continue;
         const as = 0.8 + rng() * 0.5;
         const cov = { x, z, r: 2.6 };
-        harvest(add('argan', x, z, as), 'tree', 'argan', x, z, as).cover = cov;
+        trunk(harvest(add('argan', x, z, as), 'tree', 'argan', x, z, as), 0.45 * as, 2.4 * as).cover = cov;
         this.cover.push(cov);
       } else if (roll < 0.17) {
         if (!free(x, z, 0.8)) continue;
-        add('cactus', x, z, 0.8 + rng() * 0.6, 0, 0.1);
+        const cs = 0.8 + rng() * 0.6;
+        add('cactus', x, z, cs, 0, 0.1);
+        collision.addCircle(x, z, 0.7 * cs, terrain.getHeight(x, z) - 1, terrain.getHeight(x, z) + 1.4 * cs, false, 'cactus');
         this.cover.push({ x, z, r: 1.4 });
       }
     }
@@ -272,7 +279,9 @@ export class Vegetation {
       const x = douar.x + Math.cos(a) * (36 + rng() * 4);
       const z = douar.z + Math.sin(a) * (36 + rng() * 4);
       if (distToRoads(x, z) < 4 || !free(x, z, 0.8)) continue;
-      add('cactus', x, z, 1 + rng() * 0.5, 0, 0.1);
+      const cs = 1 + rng() * 0.5;
+      add('cactus', x, z, cs, 0, 0.1);
+      collision.addCircle(x, z, 0.7 * cs, terrain.getHeight(x, z) - 1, terrain.getHeight(x, z) + 1.4 * cs, false, 'cactus');
       this.cover.push({ x, z, r: 1.5 });
     }
 
@@ -291,13 +300,17 @@ export class Vegetation {
       const rm = add('rock', x, z, s, -s * 0.25, 0.8);
       const h = s > 0.7 && r < PLAY_RADIUS - 4 ? harvest(rm, 'rock', 'rock', x, z, s) : null;
       if (big && r < PLAY_RADIUS) {
-        const c = collision.addCircle(x, z, s * 0.85, terrain.getHeight(x, z) - 1, terrain.getHeight(x, z) + s * 1.2, true, 'rock');
+        const c = collision.addCircle(x, z, s * 1.05, terrain.getHeight(x, z) - 1, terrain.getHeight(x, z) + s * 1.2, true, 'rock');
         const cov = { x, z, r: s * 1.3 };
         this.cover.push(cov);
         if (h) {
           h.collider = c;
           h.cover = cov;
         }
+      } else if (s > 0.85 && r < PLAY_RADIUS) {
+        // knee-high and up: walk round it (smaller stones are stepped over)
+        const c = collision.addCircle(x, z, s * 1.0, terrain.getHeight(x, z) - 1, terrain.getHeight(x, z) + s * 0.6, false, 'rock');
+        if (h) h.collider = c;
       }
     }
 

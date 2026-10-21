@@ -7,23 +7,27 @@ import { MaterialLibrary } from '../assets/Materials';
 import { Enemy, type EnemyContext, type ShotRequest } from '../entities/Enemy';
 import { Npc } from '../entities/Npc';
 import { SPECIES, Wildlife, type Animal } from '../entities/Wildlife';
-import { RIDES, Rides, type Ride, type RideKind } from '../entities/Rides';
+import { RIDES, Rides, type Ride, type RideKind, type Body, type PlaneControls } from '../entities/Rides';
 import { Player, type Skill } from '../entities/Player';
 import { AudioSystem } from '../systems/Audio';
 import { CameraRig } from '../systems/CameraRig';
 import { Vfx } from '../systems/Vfx';
 import { Hud, type AlertLevel, type CompassMarker, type Indicator } from '../ui/Hud';
 import { MapView } from '../ui/MapView';
-import { clamp } from '../utils/noise';
+import { clamp, dampAngle } from '../utils/noise';
 import { createSeededRandom } from '../utils/random';
 import { NavGrid } from '../world/NavGrid';
 import { Sky } from '../world/Sky';
 import { Vegetation, type Harvestable } from '../world/Vegetation';
 import { World } from '../world/World';
-import { LAKE, zone } from '../world/layout';
+import { LAKE, zone, DOUAR_STRIP } from '../world/layout';
 import { L, lang, onLangChange, setLang, t, tr, trAlt, type Lang } from '../i18n';
-import { ITEMS, RECIPES, SKILL_MAX, WEAPONS, WEAPON_ORDER, emptyInventory, type Recipe, type WeaponId } from './Items';
+import { ITEMS, RECIPES, SKILL_MAX, WEAPONS, WEAPON_ORDER, emptyInventory, type Recipe, type WeaponId, type CampKind } from './Items';
 import { AMBIENT_LINES, MISSIONS, QuestSystem, type Line } from './Quests';
+import { pushApart } from '../world/Collision';
+import { BoltDrops } from '../entities/Bolts';
+import { Camp } from '../world/Camp';
+import { WARES, priceBuy, priceSell, type Ware } from './Trade';
 import { SaveStore, packBits, unpackBits, type SaveData } from './SaveGame';
 import type { Interactable, ItemId, LootBundle } from './types';
 
@@ -170,6 +174,23 @@ export class Game {
     // wildlife: gazelles, boars and hares of the wilds, each carcass can be skinned
     this.wildlife = new Wildlife(this.world.terrain, this.world.collision);
     this.scene.add(this.wildlife.group);
+    this.scene.add(this.bolts.mesh);
+    this.camp = new Camp(this.world.terrain, this.world.collision);
+    this.scene.add(this.camp.group);
+    // traders: the souk's merchants behind their counters, and the nomads at their camp
+    for (const n of this.npcs) {
+      if (!n.spawn.id.startsWith('merchant-') && n.spawn.id !== 'nomad-trader') continue;
+      this.world.interactables.push({
+        id: `trade-${n.spawn.id}`,
+        kind: 'trade',
+        pos: n.pos,
+        radius: 2.8,
+        prompt: n.spawn.id === 'nomad-trader' ? L('Trade with the nomads', 'تبادل مع الرحّالة') : L('Trade with the merchant', 'بيع وشري مع مول الحانوت'),
+        hold: 0,
+        enabled: true,
+        ref: n.spawn.id,
+      });
+    }
     this.wildlife.onAttack = (a) => this.onAnimalAttack(a);
     this.wildlife.onCharge = (a) => {
       this.audio.grunt(a.pos.distanceTo(this.camera.position));
@@ -200,6 +221,7 @@ export class Game {
       this.world.interactables.push({ id: `ride-${r.kind}`, kind: 'ride', pos: r.pos, radius: RIDES[r.kind].reach, prompt: L(en, ar), hold: r.kind === 'horse' || r.kind === 'plane' || r.kind === 'jeep' ? 0.8 : 0, enabled: true, ref: r.kind });
     }
     this.rides.onCrash = (r) => this.onPlaneCrash(r);
+    this.rides.onImpact = (r, speed) => this.onRideImpact(r, speed);
 
     this.carryCrate = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.42, 0.32), new THREE.MeshStandardMaterial({ color: '#4f5a35', roughness: 0.8 }));
     this.carryCrate.position.set(0, 0.1, -0.3);
@@ -230,6 +252,14 @@ export class Game {
     this.audio.voiceLang = lang();
     this.bindUi();
     this.refreshQualityLabel();
+    try {
+      if (localStorage.getItem('fidai-view') === 'fps') {
+        this.camRig.firstPerson = this.player.firstPerson = true;
+        this.player.rig.hideHead(true);
+      }
+    } catch {
+      /* storage blocked */
+    }
     void this.saves.load().then((data) => {
       this.pendingSave = data;
       document.querySelector('#btn-continue-save')?.classList.toggle('hidden', !data);
@@ -440,6 +470,7 @@ export class Game {
   }
 
   private closeOverlay(): void {
+    this.tradeWith = '';
     document.querySelector('#panel')?.classList.add('hidden');
     document.querySelector('#map-screen')?.classList.add('hidden');
     this.state = 'playing';
@@ -448,7 +479,10 @@ export class Game {
 
   private renderPanel(): void {
     document.querySelectorAll<HTMLButtonElement>('.tab[data-tab]').forEach((b) => b.classList.toggle('active', b.dataset.tab === this.panelTab));
-    for (const tab of ['inv', 'craft', 'journal', 'skills']) document.querySelector(`#tab-${tab}`)?.classList.toggle('hidden', tab !== this.panelTab);
+    if (this.panelTab === 'trade' && !this.tradeWith) this.panelTab = 'inv';
+    document.querySelector('.tab[data-tab="trade"]')?.classList.toggle('hidden', !this.tradeWith);
+    for (const tab of ['inv', 'craft', 'journal', 'skills', 'trade']) document.querySelector(`#tab-${tab}`)?.classList.toggle('hidden', tab !== this.panelTab);
+    if (this.tradeWith) this.renderTrade();
     this.hud.renderInventory(this.player.inventory, (id) => {
       this.useItem(id);
       this.renderPanel();
@@ -512,10 +546,12 @@ export class Game {
     if (this.state !== 'title' && sim > 0) {
       const [lx, ly] = this.input.consumeLook();
       if (!blocked) this.camRig.look(lx, ly);
+      if (lx || ly) this.lastLookAt = this.elapsed;
       if (this.riding) {
         this.updateRiding(sim, blocked);
       } else {
         this.player.update(sim, this.input, this.camRig.yaw, this.world.terrain, this.world.collision, blocked, this.gameTime);
+        this.pushPlayerFromBodies();
         // deep water: the lake is crossed by boat, not on foot
         const lx = this.player.pos.x - LAKE.x;
         const lz = this.player.pos.z - LAKE.z;
@@ -550,7 +586,7 @@ export class Game {
       this.player.headPoint(this.ctx.playerHead);
       this.ctx.playerStealth = this.player.stealthFactor() * (this.riding ? RIDES[this.riding.kind].stealth : 1);
       this.ctx.playerConcealed = this.concealed;
-      this.ctx.playerDead = this.player.dead || this.state === 'title';
+      this.ctx.playerDead = this.player.dead || this.state === 'title' || this.ceasefire;
       this.ctx.pathBudget.left = 4;
       for (const e of this.enemies) {
         const d = e.pos.distanceTo(this.camera.position);
@@ -572,6 +608,13 @@ export class Game {
         playerDead: this.player.dead || this.state === 'title',
       });
       this.syncCarcasses();
+      const got = this.bolts.update(sim, this.player.pos);
+      if (got > 0 && !this.player.dead) {
+        this.player.inventory.bolt += got;
+        this.audio.pickup();
+        this.hud.toast(t('msg.boltBack', { n: got }), 'good');
+      }
+      this.camp.update(this.elapsed);
       for (const n of this.npcs) {
         n.rig.root.visible = !n.fled && n.pos.distanceTo(this.camera.position) < 110;
         n.update(sim, this.world.terrain, this.world.collision, this.player.pos);
@@ -588,6 +631,10 @@ export class Game {
 
     // ---- camera, sky, lights, effects
     this.camRig.reducedMotion = this.reducedMotion;
+    if (this.state === 'playing') {
+      if (this.input.wasPressed('view')) this.setFirstPerson(!this.camRig.firstPerson);
+      this.camRig.lookBack = this.input.isHeld('lookBack');
+    } else this.camRig.lookBack = false;
     this.camRig.update(dt, this.player.pos, this.player.crouchAmt, this.player.aimAmt, this.player.sprinting, this.world.collision, this.world.terrain);
     this.sky.update(this.player.pos, this.camera);
     this.renderer.toneMappingExposure = this.sky.exposure;
@@ -652,7 +699,7 @@ export class Game {
     const p = this.player;
     const i = this.input;
     if (p.dead) return;
-    const slotKeys = ['weapon1', 'weapon2', 'weapon3', 'weapon4', 'weapon5', 'weapon6', 'weapon7'] as const;
+    const slotKeys = ['weapon1', 'weapon2', 'weapon3', 'weapon4', 'weapon5', 'weapon6', 'weapon7', 'weapon8'] as const;
     slotKeys.forEach((k, idx) => {
       if (!i.wasPressed(k)) return;
       const w = WEAPON_ORDER[idx];
@@ -665,7 +712,7 @@ export class Game {
       p.setWeapon(owned[(at + (i.wheel > 0 ? 1 : -1) + owned.length) % owned.length]);
     }
     if (i.wasPressed('drink')) this.useItem('water');
-    if (i.wasPressed('eat')) this.useItem(p.inventory.cookedMeat > 0 ? 'cookedMeat' : p.inventory.bread > 0 ? 'bread' : 'dates');
+    if (i.wasPressed('eat')) this.useItem(p.inventory.tagine > 0 ? 'tagine' : p.inventory.cookedMeat > 0 ? 'cookedMeat' : p.inventory.bread > 0 ? 'bread' : p.inventory.driedMeat > 0 ? 'driedMeat' : 'dates');
     if (i.wasPressed('heal')) this.useItem(p.inventory.bandage > 0 && p.health < p.maxHealth - 30 ? 'bandage' : 'herbs');
 
     const gun = p.gun;
@@ -799,7 +846,8 @@ export class Game {
     spread += Math.min(1, p.moveSpeed / 4) * 0.03;
     spread *= 1 - p.skills.marksman * 0.12;
     const muzzle = p.rig.muzzleWorld(new THREE.Vector3());
-    const sling = p.weapon === 'sling';
+    // sling and crossbow: no flash, no tracer
+    const sling = p.weapon === 'sling' || p.weapon === 'crossbow';
     if (!sling) this.vfx.muzzle(muzzle, aimDir);
     const hits = new Map<Enemy, { dmg: number; head: boolean }>();
     const animalHits = new Map<Animal, number>();
@@ -843,6 +891,7 @@ export class Game {
       }
       const hitPoint = origin.clone().addScaledVector(dir, hitT);
       if (k < 3 && !sling) this.vfx.tracer(muzzle, hitPoint);
+      if (p.weapon === 'crossbow') this.landBolt(hitPoint, dir, hitT < range, hitEnemy?.pos ?? hitAnimal?.pos ?? null);
       if (hitAnimal) {
         const fall = clamp(1.4 - hitT / range, 0.45, 1);
         animalHits.set(hitAnimal, (animalHits.get(hitAnimal) ?? 0) + gun.damage * fall * (1 + p.skills.hunter * 0.2) * (1 + p.skills.marksman * 0.12));
@@ -877,6 +926,119 @@ export class Game {
     this.broadcastNoise(p.pos, gun.noise, true);
   }
 
+  /**
+   * A shot bolt ends up somewhere you can fetch it: stuck where it struck, lying
+   * by the man or beast it hit, or in the dirt where it came down. One in six
+   * snaps on stone or bone.
+   */
+  private landBolt(hitPoint: THREE.Vector3, dir: THREE.Vector3, struck: boolean, body: THREE.Vector3 | null): void {
+    if (this.rng() < (body ? 0.25 : 0.15)) return;
+    const terrain = this.world.terrain;
+    if (body) {
+      const x = body.x + dir.x * 0.4;
+      const z = body.z + dir.z * 0.4;
+      this.bolts.drop(this.tmpA.set(x, terrain.getHeight(x, z) + 0.05, z), this.tmpB.set(dir.x, -0.7, dir.z).normalize());
+      return;
+    }
+    if (struck) {
+      this.bolts.drop(hitPoint, dir);
+      return;
+    }
+    // spent at full range: it comes down in the dirt
+    const x = hitPoint.x;
+    const z = hitPoint.z;
+    this.bolts.drop(this.tmpA.set(x, terrain.getHeight(x, z) + 0.02, z), this.tmpB.set(dir.x, -0.8, dir.z).normalize());
+  }
+
+  // ================================================================ trade
+
+  private openTrade(trader: string): void {
+    this.tradeWith = trader;
+    this.panelTab = 'trade';
+    this.openOverlay('panel');
+  }
+
+  /** Smugglers (the souk's first merchant, the nomads) also deal in powder, cartridges and guns. */
+  private smuggler(trader: string): boolean {
+    return trader === 'merchant-0' || trader === 'nomad-trader';
+  }
+
+  private tradeBuy(w: Ware): void {
+    const p = this.player;
+    const price = priceBuy(w, p.skills.scavenger);
+    if (p.inventory.francs < price) return void this.hud.toast(t('trade.poor'), 'bad');
+    if ((w.weapon && p.owned.has(w.weapon)) || (w.upgrade && p.upgrades.has(w.upgrade))) return;
+    p.inventory.francs -= price;
+    if (w.item) p.inventory[w.item] += w.qty;
+    if (w.weapon) this.grantWeapon(w.weapon);
+    if (w.upgrade) {
+      p.upgrades.add(w.upgrade);
+      if (w.upgrade === 'bigSkin') p.inventory.water = p.waterCharges;
+    }
+    this.audio.pickup();
+  }
+
+  private tradeSell(w: Ware, all: boolean): void {
+    const p = this.player;
+    if (!w.item || !w.sell || p.inventory[w.item] <= 0) return;
+    const n = all ? p.inventory[w.item] : 1;
+    p.inventory[w.item] -= n;
+    p.inventory.francs += priceSell(w, p.skills.scavenger) * n;
+    this.audio.pickup();
+  }
+
+  private renderTrade(): void {
+    const p = this.player;
+    const smuggler = this.smuggler(this.tradeWith);
+    const wares = WARES.filter((w) => smuggler || !w.contraband).map((w) => ({
+      w,
+      buy: w.buy ? priceBuy(w, p.skills.scavenger) : 0,
+      sell: w.sell ? priceSell(w, p.skills.scavenger) : 0,
+      have: w.item ? p.inventory[w.item] : 0,
+      owned: Boolean((w.weapon && p.owned.has(w.weapon)) || (w.upgrade && p.upgrades.has(w.upgrade))),
+    }));
+    this.hud.renderTrade(
+      wares,
+      p.inventory.francs,
+      smuggler,
+      (w) => {
+        this.tradeBuy(w);
+        this.renderPanel();
+      },
+      (w, all) => {
+        this.tradeSell(w, all);
+        this.renderPanel();
+      },
+    );
+  }
+
+  // ================================================================ camp
+
+  /** Set a camp piece down two and a half metres in front of the fidāʾī. */
+  private buildCamp(kind: CampKind): boolean {
+    const p = this.player;
+    const fx = Math.sin(p.yaw);
+    const fz = Math.cos(p.yaw);
+    for (const d of [2.6, 3.4, 2]) {
+      const x = p.pos.x + fx * d;
+      const z = p.pos.z + fz * d;
+      if (!this.camp.canPlace(kind, x, z)) continue;
+      const piece = this.camp.place(kind, x, z, p.yaw + Math.PI);
+      this.world.interactables.push(piece.it);
+      this.vfx.impact(this.tmpA.set(x, this.world.terrain.getHeight(x, z) + 0.4, z), 'dust', 10);
+      return true;
+    }
+    this.hud.toast(t('camp.noRoom'), 'bad');
+    return false;
+  }
+
+  /** Near a cooking station: your camp's oven or fire, or the douar's bread oven. */
+  private nearStation(station: 'oven' | 'fire'): boolean {
+    const p = this.player.pos;
+    if (this.camp.near(station, p.x, p.z)) return true;
+    return this.world.interactables.some((it) => it.kind === 'oven' && Math.hypot(it.pos.x - p.x, it.pos.z - p.z) < 4);
+  }
+
   private onAnimalKill(a: Animal): void {
     if (a.counted) return;
     a.counted = true;
@@ -895,6 +1057,20 @@ export class Game {
     this.camRig.addTrauma(0.45);
     this.hud.damageFrom(this.screenAngleTo(a.pos));
     this.hitstop(0.06);
+  }
+
+  // ================================================================ camera views
+
+  private setFirstPerson(on: boolean): void {
+    this.camRig.firstPerson = on;
+    this.player.firstPerson = on;
+    this.player.rig.hideHead(on);
+    this.hud.toast(t(on ? 'view.first' : 'view.third'));
+    try {
+      localStorage.setItem('fidai-view', on ? 'fps' : 'tps');
+    } catch {
+      /* storage blocked */
+    }
   }
 
   // ================================================================ save / load
@@ -928,6 +1104,7 @@ export class Game {
         discovered: [...this.discovered],
         fog: packBits(this.fog),
         harvested: this.veg.harvestables.filter((h) => h.done).map((h) => h.id),
+        camp: this.camp.pieces.map((c) => ({ kind: c.kind, x: c.x, z: c.z, yaw: c.yaw })),
         prisonOpened: this.prisonOpened,
         carrying: this.carrying,
       },
@@ -993,6 +1170,10 @@ export class Game {
     this.carryCrate.visible = this.carrying;
     for (const id of d.world.discovered) this.discovered.add(id);
     if (d.world.fog) unpackBits(d.world.fog, this.fog);
+    for (const c of d.world.camp ?? []) {
+      if (this.camp.pieces.some((q) => q.kind === c.kind && Math.hypot(q.x - c.x, q.z - c.z) < 0.5)) continue;
+      this.world.interactables.push(this.camp.place(c.kind as CampKind, c.x, c.z, c.yaw).it);
+    }
     for (const id of d.world.harvested ?? []) {
       const h = this.veg.harvestables[id];
       if (h) this.veg.harvest(h);
@@ -1015,14 +1196,17 @@ export class Game {
     this.hud.setPrompt(null);
     this.camRig.rideDistance = RIDES[r.kind].cam;
     this.camRig.rideHeight = RIDES[r.kind].camH;
+    this.camRig.seated = true;
     this.camRig.yaw = r.yaw + Math.PI;
     this.audio.pickup();
     this.hud.toast(t('ride.mounted', { what: tr(RIDES[r.kind].name) }), 'good');
+    if (r.kind === 'plane') this.hud.showBanner(t('ride.cockpit'), tr(RIDES.plane.name), t('ride.planeHelp'), 8000);
     if (r.kind === 'plane') this.questEvent('board:plane');
     for (const it of this.world.interactables) if (it.kind === 'ride') it.enabled = false;
   }
 
   private dismount(): void {
+    this.hud.setGauges(null);
     const r = this.riding;
     if (!r) return;
     this.riding = null;
@@ -1031,6 +1215,7 @@ export class Game {
     this.player.health = Math.min(this.player.maxHealth, this.player.health);
     this.camRig.rideDistance = 0;
     this.camRig.rideHeight = 0;
+    this.camRig.seated = false;
     this.camRig.snap();
     for (const it of this.world.interactables) if (it.kind === 'ride') it.enabled = true;
   }
@@ -1042,8 +1227,22 @@ export class Game {
     const i = this.input;
     const ctl = blocked
       ? NO_CONTROLS
-      : { f: i.isHeld('forward'), b: i.isHeld('back'), l: i.isHeld('left'), r: i.isHeld('right'), boost: i.isHeld('sprint'), up: i.isHeld('jump'), down: i.isHeld('crouch') };
+      : {
+          f: i.isHeld('forward'),
+          b: i.isHeld('back'),
+          l: i.isHeld('left'),
+          r: i.isHeld('right'),
+          boost: i.isHeld('sprint'),
+          up: i.isHeld('jump'),
+          down: i.isHeld('crouch'),
+          plane: r.kind === 'plane' ? this.cockpit() : undefined,
+        };
+    // people and animals stand in the way; a fast jeep runs enemies and game down instead
+    const fast = r.kind === 'jeep' && Math.abs(r.speed) > 7;
+    this.rides.obstacles = this.characterBodies(fast, this.rides.bodies(r, []));
     this.rides.update(dt, r, ctl, this.camera.position);
+    this.updateRideGauges(r);
+    this.chaseCamera(r, dt);
     // survival keeps ticking while riding; the seat holds the body
     const seat = this.rides.seatWorld(r, this.tmpB);
     p.update(dt, this.input, this.camRig.yaw, this.world.terrain, this.world.collision, true, this.gameTime);
@@ -1079,7 +1278,8 @@ export class Game {
         this.questEvent('airdrop');
       }
     } else if (this.rides.canLeave(r)) {
-      this.hud.setPrompt(t('ride.leave', { what: tr(RIDES[r.kind].name) }), 0);
+      const leave = t('ride.leave', { what: tr(RIDES[r.kind].name) });
+      this.hud.setPrompt(r.kind === 'plane' && !r.engineOn ? `${leave} · ${t('ride.startEngine')}` : leave, 0);
       if (i.wasPressed('interact')) {
         const landedAway = this.rides.checkLanded(r);
         const nearDouar = Math.hypot(r.pos.x - this.world.hideout.x, r.pos.z - this.world.hideout.z) < 170;
@@ -1096,6 +1296,116 @@ export class Game {
       }
     }
     if (r.kind === 'plane' && r.flying) this.landedReported = false;
+  }
+
+  private lastLookAt = -99;
+  /** test hook: soldiers treat the player as gone */
+  private ceasefire = false;
+  private readonly bolts = new BoltDrops();
+  private camp!: Camp;
+  /** the trader whose stall is open in the panel ('' = none) */
+  private tradeWith = '';
+  private readonly tmpTarget = new THREE.Vector3();
+
+  /**
+   * Cockpit controls, GTA-style: W/S throttle, A/D rudder, numpad 4/6 (or ←/→)
+   * ailerons, numpad 8/5 (or ↑/↓) elevator, 8 = nose down, 5 = nose up.
+   * Space wheel brakes, F/R flaps down/up, T/G trim nose-up/down, N engine.
+   */
+  private cockpit(): PlaneControls {
+    const i = this.input;
+    const axis = (plus: boolean, minus: boolean) => (plus ? 1 : 0) - (minus ? 1 : 0);
+    return {
+      throttle: axis(i.keyHeld('KeyW'), i.keyHeld('KeyS')),
+      rudder: axis(i.keyHeld('KeyD'), i.keyHeld('KeyA')),
+      aileron: axis(i.keyHeld('Numpad6', 'ArrowRight'), i.keyHeld('Numpad4', 'ArrowLeft')),
+      elevator: axis(i.keyHeld('Numpad5', 'ArrowDown', 'Numpad2'), i.keyHeld('Numpad8', 'ArrowUp')),
+      brake: i.keyHeld('Space'),
+      flaps: axis(i.keyPressed('KeyF'), i.keyPressed('KeyR')),
+      trim: axis(i.keyHeld('KeyT'), i.keyHeld('KeyG')),
+      engine: i.keyPressed('KeyN'),
+    };
+  }
+
+  /** In the jeep and the plane the camera swings back behind the nose when the mouse is left alone. */
+  private chaseCamera(r: Ride, dt: number): void {
+    if ((r.kind !== 'plane' && r.kind !== 'jeep') || this.camRig.lookBack || this.camRig.firstPerson && r.kind === 'jeep') return;
+    if (this.elapsed - this.lastLookAt < 1.5) return;
+    const k = r.kind === 'plane' ? 2.2 : 1.6;
+    this.camRig.yaw = dampAngle(this.camRig.yaw, r.yaw + Math.PI, k, dt);
+    const pitch = r.kind === 'plane' && r.flying ? 0.12 + clamp(-r.gamma, -0.4, 0.5) : 0.16;
+    this.camRig.pitch += (pitch - this.camRig.pitch) * Math.min(1, dt * k);
+  }
+
+  /** People, animals and parked rides as solid circles. `skipHostile` leaves out what a fast jeep runs down. */
+  private characterBodies(skipHostile: boolean, out: Body[]): Body[] {
+    if (!skipHostile) {
+      for (const e of this.enemies) if (e.alive) out.push({ x: e.pos.x, z: e.pos.z, r: 0.36, y0: e.pos.y, y1: e.pos.y + 1.8 });
+      for (const a of this.wildlife.animals) {
+        if (a.state === 'dead') continue;
+        out.push({ x: a.pos.x, z: a.pos.z, r: SPECIES[a.species].radius * 0.8, y0: a.pos.y, y1: a.pos.y + SPECIES[a.species].bodyY * 2 });
+      }
+    }
+    for (const n of this.npcs) if (!n.fled && n.rig.root.visible) out.push({ x: n.pos.x, z: n.pos.z, r: 0.32, y0: n.pos.y, y1: n.pos.y + 1.75 });
+    return out;
+  }
+
+  private readonly bodyScratch: Body[] = [];
+
+  /** Walk round people, animals and parked rides instead of through them. */
+  private pushPlayerFromBodies(): void {
+    const p = this.player;
+    if (p.dead) return;
+    const list = this.bodyScratch;
+    list.length = 0;
+    this.characterBodies(false, this.rides.bodies(null, list));
+    let moved = false;
+    for (const b of list) {
+      if (b.y1 < p.pos.y + 0.45 || b.y0 > p.pos.y + 1.75) continue;
+      if (Math.abs(b.x - p.pos.x) > b.r + 1 || Math.abs(b.z - p.pos.z) > b.r + 1) continue;
+      moved = pushApart(p.pos, 0.36, b.x, b.z, b.r) || moved;
+    }
+    // never shoved into a wall
+    if (moved) this.world.collision.resolveCircle(p.pos, 0.36, 1.75);
+  }
+
+  /** A driven ride hit something: shake, a thump, and a hurt rider if it was hard. */
+  private onRideImpact(r: Ride, speed: number): void {
+    if (this.riding !== r) return;
+    this.camRig.addTrauma(clamp(speed / 14, 0.15, 0.8));
+    this.audio.hit(false);
+    if (speed > 11) {
+      this.player.damage((speed - 11) * 6, { kind: 'crash' }, this.gameTime);
+      this.hud.flash(0.35, '#ff3b2f');
+    }
+  }
+
+  private updateRideGauges(r: Ride): void {
+    const g = this.rides.gauges(r);
+    const kmh = `${Math.round(g.speed * 3.6)} ${t('gauge.kmh')}`;
+    if (r.kind === 'plane') {
+      const flying = r.flying;
+      this.hud.setGauges([
+        { label: t('gauge.airspeed'), value: kmh, warn: g.stall },
+        { label: t('gauge.alt'), value: `${Math.max(0, Math.round(g.alt))} m` },
+        { label: t('gauge.vs'), value: `${g.vs >= 0 ? '+' : ''}${g.vs.toFixed(1)} m/s`, warn: flying && g.alt < 15 && g.vs < -3.5 },
+        { label: t('gauge.heading'), value: `${String(Math.round(g.heading) % 360).padStart(3, '0')}°` },
+        { label: t('gauge.rpm'), value: g.engine === 'off' ? t('gauge.engineOff') : String(g.rpm), warn: g.engine !== 'on' },
+        { label: t('gauge.throttle'), value: `${Math.round(g.throttle * 100)}%` },
+        { label: t('gauge.flaps'), value: `${g.flaps}°` },
+        { label: t('gauge.trim'), value: `${g.trim >= 0 ? '+' : ''}${Math.round(g.trim * 100)}` },
+        ...(g.brake ? [{ label: '', value: t('gauge.brake'), warn: true }] : []),
+        ...(g.stall ? [{ label: '', value: t('gauge.stall'), warn: true }] : []),
+      ]);
+      if (g.engine === 'off' && !flying) this.hud.setPrompt(t('ride.startEngine'), 0);
+    } else if (r.kind === 'jeep' || r.kind === 'boat' || r.kind === 'train') {
+      this.hud.setGauges([{ label: t('gauge.speed'), value: kmh }, ...(g.brake ? [{ label: '', value: t('gauge.brake'), warn: true }] : [])]);
+    } else {
+      this.hud.setGauges([
+        { label: t('gauge.speed'), value: kmh },
+        { label: t('gauge.wind'), value: `${Math.round(g.stamina * 100)}%`, warn: g.stamina < 0.2 },
+      ]);
+    }
   }
 
   private onPlaneCrash(r: Ride): void {
@@ -1169,6 +1479,8 @@ export class Game {
         ...(!french && r() < 0.55 ? { cloth: 1 } : {}),
         ...(e.isOfficer ? { pistolAmmo: 6 + Math.floor(r() * 6) } : {}),
         ...(french && r() < 0.15 ? { bandage: 1 } : {}),
+        // a soldier's pay, an officer's purse
+        francs: e.isOfficer ? 60 + Math.floor(r() * 80) : 8 + Math.floor(r() * 25),
       };
       it.weapon = e.isOfficer && !this.player.owned.has('pistol') ? 'pistol' : undefined;
       if (e.spawn.carries === 'key' && this.player.inventory.key <= 0 && !this.prisonOpened) it.loot.key = 1;
@@ -1213,7 +1525,9 @@ export class Game {
       if (distToPlayer < 40) this.audio.whiz();
       return;
     }
-    if (this.rng() < req.hitChance) {
+    // a rider or pilot going fast is a hard target for a bolt-action rifle
+    const moving = this.riding ? Math.abs(this.riding.speed) : 0;
+    if (this.rng() < req.hitChance / (1 + moving / 6)) {
       p.damage(req.damage * (0.85 + this.rng() * 0.3), { kind: 'shot', by: req.enemy.label }, this.gameTime);
       this.vfx.tracer(req.from, chest);
       this.vfx.impact(chest, 'blood', 5);
@@ -1370,8 +1684,12 @@ export class Game {
         break;
       }
       case 'bench':
+      case 'cook':
         this.panelTab = 'craft';
         this.openOverlay('panel');
+        break;
+      case 'trade':
+        this.openTrade(it.ref ?? '');
         break;
       case 'harvest': {
         const h = this.harvestRef;
@@ -1489,6 +1807,7 @@ export class Game {
         p.thirst = Math.max(5, p.thirst - delta * 2.2);
         this.hud.flash(0.95, '#0b0d18');
         this.hud.toast(t(target === 21 ? 'msg.sleepNight' : 'msg.sleepDawn'), 'good');
+        window.setTimeout(() => void this.saveNow(false), 50);
         break;
       }
     }
@@ -1533,7 +1852,8 @@ export class Game {
   // ================================================================ crafting
 
   private nearBench(): boolean {
-    return this.player.pos.distanceTo(this.world.bench) < 5;
+    const p = this.player.pos;
+    return p.distanceTo(this.world.bench) < 5 || this.camp.near('bench', p.x, p.z, 3.5);
   }
 
   private craftState(r: Recipe): { can: boolean; reason: string; done: boolean } {
@@ -1542,6 +1862,7 @@ export class Game {
     if (done) return { can: false, reason: t('craft.owned'), done };
     if ((r.artisan ?? 0) > p.skills.artisan) return { can: false, reason: t('craft.needArtisan', { n: r.artisan ?? 0 }), done };
     if (r.bench && !this.nearBench()) return { can: false, reason: t('craft.needBench'), done };
+    if (r.station && !this.nearStation(r.station)) return { can: false, reason: t(r.station === 'oven' ? 'craft.needOven' : 'craft.needFire'), done };
     for (const [k, v] of Object.entries(r.cost) as [ItemId, number][]) {
       if (p.inventory[k] < v) return { can: false, reason: t('craft.missing'), done };
     }
@@ -1551,6 +1872,7 @@ export class Game {
   private craft(r: Recipe): void {
     if (!this.craftState(r).can) return;
     const p = this.player;
+    if (r.build && !this.buildCamp(r.build)) return;
     for (const [k, v] of Object.entries(r.cost) as [ItemId, number][]) p.inventory[k] -= v;
     if (r.gives) {
       const gives: LootBundle = {};
@@ -1578,16 +1900,23 @@ export class Game {
       p.inventory.water -= 1;
       p.thirst = Math.min(100, p.thirst + 35);
       this.audio.drink();
-    } else if (id === 'bread' || id === 'dates' || id === 'cookedMeat' || id === 'rawMeat') {
+    } else if (id === 'tea') {
+      if (p.inventory.tea <= 0 || p.thirst > 97) return;
+      p.inventory.tea -= 1;
+      p.thirst = Math.min(100, p.thirst + 40);
+      p.stamina = p.maxStamina;
+      this.audio.drink();
+    } else if (id === 'bread' || id === 'dates' || id === 'cookedMeat' || id === 'rawMeat' || id === 'tagine' || id === 'driedMeat') {
       if (p.inventory[id] <= 0) {
         // F eats the best food in the satchel
-        const other = (['cookedMeat', 'bread', 'dates', 'rawMeat'] as const).find((f) => p.inventory[f] > 0);
+        const other = (['tagine', 'cookedMeat', 'bread', 'driedMeat', 'dates', 'rawMeat'] as const).find((f) => p.inventory[f] > 0);
         if (other) return this.useItem(other);
         return void this.hud.toast(t('msg.noFood'), 'bad');
       }
       if (p.hunger > 97) return;
       p.inventory[id] -= 1;
-      const food = { bread: 40, dates: 18, cookedMeat: 50, rawMeat: 15 }[id];
+      const food = { bread: 40, dates: 18, cookedMeat: 50, rawMeat: 15, tagine: 80, driedMeat: 35 }[id];
+      if (id === 'tagine') p.health = Math.min(p.maxHealth, p.health + 25);
       p.hunger = Math.min(100, p.hunger + food * (1 + p.skills.survivalist * 0.1));
       if (id === 'dates') p.thirst = Math.min(100, p.thirst + 6);
       if (id === 'rawMeat') p.thirst = Math.max(0, p.thirst - 4);
@@ -1700,6 +2029,7 @@ export class Game {
 
   private resolveTarget(id: string): THREE.Vector3 | null {
     if (id === 'hideout') return this.world.hideout;
+    if (id === 'strip:douar') return this.tmpTarget.set(DOUAR_STRIP.x, this.world.terrain.getHeight(DOUAR_STRIP.x, DOUAR_STRIP.z), DOUAR_STRIP.z);
     if (id.startsWith('npc:')) {
       const n = this.npcs.find((x) => x.spawn.id === id.slice(4));
       return n ? n.pos : null;
@@ -1869,6 +2199,7 @@ export class Game {
     this.riding = null;
     this.camRig.rideDistance = 0;
     this.camRig.rideHeight = 0;
+    this.camRig.seated = false;
     for (const it of this.world.interactables) if (it.kind === 'ride') it.enabled = true;
     const plane = this.rides.get('plane');
     if (plane.crashed || plane.flying) {
@@ -2148,19 +2479,34 @@ export class Game {
           .map((h) => ({ id: h.id, x: h.x, z: h.z, scale: h.scale }))
           .sort((a, b) => Math.hypot(a.x - this.player.pos.x, a.z - this.player.pos.z) - Math.hypot(b.x - this.player.pos.x, b.z - this.player.pos.z))
           .slice(0, 5),
+      colliders: (x: number, z: number, r: number) =>
+        this.world.collision.colliders
+          .filter((c) => c.enabled && Math.hypot(c.x - x, c.z - z) < r + (c.kind === 'circle' ? c.r : Math.max(c.hx, c.hz)))
+          .map((c) => ({ tag: c.tag ?? c.kind, x: c.x, z: c.z, r: c.kind === 'circle' ? c.r : Math.max(c.hx, c.hz), top: c.y1 })),
       save: () => this.saveNow(false).then(() => this.saves.backend),
-      rides: () => this.rides.rides.map((r) => ({ kind: r.kind, x: r.pos.x, y: r.pos.y, z: r.pos.z, speed: r.speed, flying: r.flying, crashed: r.crashed, reason: r.crashReason })),
-      pilot: (x: number, alt: number, z: number, yaw: number, speed: number) => {
+      bolts: () => this.bolts.positions(),
+      camp: () => this.camp.pieces.map((c) => ({ kind: c.kind, x: c.x, z: c.z, ix: c.it.pos.x, iz: c.it.pos.z })),
+      rides: () => this.rides.rides.map((r) => ({ kind: r.kind, x: r.pos.x, y: r.pos.y, z: r.pos.z, speed: r.speed, flying: r.flying, crashed: r.crashed, reason: r.crashReason, yaw: r.yaw, pitch: r.pitch, roll: r.roll, gamma: r.gamma, beta: r.beta, stalled: r.stalled })),
+      ceasefire: (on: boolean) => {
+        // soldiers ignore the player while it holds (tests that need a quiet sky)
+        this.ceasefire = on;
+        if (on) for (const e of this.enemies) e.pacify();
+      },
+      gauges: () => {
+        const r = this.rides.get('plane');
+        return { ...this.rides.gauges(r), flapPos: r.flapPos };
+      },
+      pilot: (x: number, alt: number, z: number, yaw: number, speed: number, flaps = 0) => {
         // place the stolen plane in flight (tests skip the long cross-country leg)
         const r = this.rides.get('plane');
         r.pos.set(x, this.world.terrain.getHeight(x, z) + alt, z);
         r.yaw = yaw;
         r.speed = speed;
         r.flying = true;
+        r.crashed = false;
         r.vy = 0;
-        r.pitch = 0;
         r.roll = 0;
-        r.throttle = speed / 44;
+        this.rides.trimFor(r, speed, flaps);
       },
       animals: () => this.wildlife.animals.map((a) => ({ id: a.id, species: a.species, x: a.pos.x, y: a.pos.y + SPECIES[a.species].bodyY, z: a.pos.z, alive: a.state !== 'dead', skinned: a.skinned })),
       aimAt: (x: number, y: number, z: number) => {
@@ -2242,6 +2588,7 @@ export class Game {
         lang: lang(),
         animalsAlive: this.wildlife.alive,
         riding: this.riding?.kind ?? null,
+        view: { firstPerson: this.camRig.firstPerson, lookBack: this.camRig.lookBack, cam: { x: this.camera.position.x, y: this.camera.position.y, z: this.camera.position.z }, yaw: this.camRig.yaw },
         hunts: this.stats.hunts,
         song: this.audio.currentSong,
         quality: this.pipeline.quality,

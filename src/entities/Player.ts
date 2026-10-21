@@ -41,6 +41,8 @@ export class Player {
   readonly pos = new THREE.Vector3();
   readonly vel = new THREE.Vector3();
   yaw = 0;
+  /** first-person view: the body always faces where the camera looks */
+  firstPerson = false;
   vy = 0;
   grounded = true;
   crouched = false;
@@ -64,7 +66,7 @@ export class Player {
 
   weapon: Weapon = 'blade';
   readonly owned = new Set<WeaponId>(['blade', 'rifle']);
-  readonly clips: Record<WeaponId, number> = { blade: 0, rifle: 3, pistol: 0, musket: 0, smg: 0, sling: 0, shotgun: 0 };
+  readonly clips: Record<WeaponId, number> = { blade: 0, rifle: 3, pistol: 0, musket: 0, smg: 0, sling: 0, shotgun: 0, crossbow: 0 };
   readonly upgrades = new Set<Upgrade>();
   meleeT = -1;
   meleeHitDone = false;
@@ -72,7 +74,7 @@ export class Player {
   reloadT = -1;
   interactT = 0;
 
-  inventory: Record<ItemId, number> = { ...emptyInventory(), bread: 1, dates: 2, ammo: 7, water: 1, cloth: 1 };
+  inventory: Record<ItemId, number> = { ...emptyInventory(), francs: 40, bread: 1, dates: 2, ammo: 7, water: 1, cloth: 1 };
   xp = 0;
   level = 1;
   skillPoints = 0;
@@ -196,7 +198,7 @@ export class Player {
     this.vel.z += (dz * target - this.vel.z) * k;
 
     // ---- facing
-    if (this.aiming || this.weapon !== 'blade' && input.isHeld('attack')) {
+    if (this.firstPerson || this.aiming || this.weapon !== 'blade' && input.isHeld('attack')) {
       this.yaw = dampAngle(this.yaw, cameraYaw + Math.PI, 20, dt);
     } else if (moving) {
       this.yaw = dampAngle(this.yaw, Math.atan2(dx, dz), 11, dt);

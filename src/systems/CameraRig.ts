@@ -14,7 +14,9 @@ function pseudoNoise(t: number, seed: number): number {
 
 /**
  * Over-the-shoulder orbit camera with aim zoom, collision against walls and
- * terrain, trauma² shake and an additive FOV punch.
+ * terrain, trauma² shake and an additive FOV punch. Also a first-person eye
+ * view, and a look-back view (held) that turns only the camera: aim and
+ * movement keep using `yaw`.
  */
 export class CameraRig {
   yaw = 0;
@@ -29,6 +31,11 @@ export class CameraRig {
   /** extra follow distance and height while riding or driving */
   rideDistance = 0;
   rideHeight = 0;
+  firstPerson = false;
+  lookBack = false;
+  /** riding: the rider sits, so the first-person eye is lower than when standing */
+  seated = false;
+  private readonly view = new THREE.Vector3();
   private readonly pivot = new THREE.Vector3();
   private readonly desired = new THREE.Vector3();
   private readonly fwd = new THREE.Vector3();
@@ -75,14 +82,33 @@ export class CameraRig {
     this.forward(this.fwd);
     this.right.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
 
+    // direction the camera looks: reversed while looking back
+    const view = this.view.copy(this.fwd);
+    if (this.lookBack) view.set(-view.x, view.y, -view.z);
+
+    const cam = this.camera;
+    if (this.firstPerson) {
+      // eye just ahead of the face so the head never fills the screen
+      const eye = this.desired.set(player.x, player.y + (this.seated ? 0.82 : 1.58 - crouch * 0.5), player.z);
+      eye.x += this.fwd.x * 0.2;
+      eye.z += this.fwd.z * 0.2;
+      cam.position.copy(eye);
+      cam.lookAt(eye.addScaledVector(view, 10));
+      this.dist = 0.35;
+      this.finish(dt, aim, sprint);
+      return;
+    }
+
     const wantDist = THREE.MathUtils.lerp(4.2, 1.75, aim) + (sprint ? 0.4 : 0) + this.rideDistance;
     const shoulder = THREE.MathUtils.lerp(0.72, 0.6, aim);
     const base = this.smoothPivot;
     const shoulderPt = this.desired.copy(base).addScaledVector(this.right, shoulder);
-    const target = shoulderPt.clone().addScaledVector(this.fwd, -wantDist);
+    const target = shoulderPt.clone().addScaledVector(view, -wantDist);
 
-    // collision: pull in when blocked
-    let t = collision.raycast(base, target, false);
+    // collision: pull in when a wall, house or big rock is in the way. Trunks, posts, jars and
+    // other thin or see-through props are ignored, or the camera would jump in and out
+    // all the way through an olive grove or the souk.
+    let t = collision.raycast(base, target, true);
     const tt = terrain.raycastSegment(base, target, 0.5);
     if (tt >= 0 && (t < 0 || tt < t)) t = tt;
     let allowed = wantDist;
@@ -90,12 +116,16 @@ export class CameraRig {
     if (allowed < this.dist) this.dist = allowed;
     else this.dist += (allowed - this.dist) * (1 - Math.exp(-dt * 4));
 
-    const cam = this.camera;
-    cam.position.copy(shoulderPt).addScaledVector(this.fwd, -this.dist);
+    cam.position.copy(shoulderPt).addScaledVector(view, -this.dist);
     const groundY = terrain.getHeight(cam.position.x, cam.position.z) + 0.3;
     if (cam.position.y < groundY) cam.position.y = groundY;
-    cam.lookAt(this.desired.copy(shoulderPt).addScaledVector(this.fwd, 10));
+    cam.lookAt(this.desired.copy(shoulderPt).addScaledVector(view, 10));
+    this.finish(dt, aim, sprint);
+  }
 
+  /** Shake and FOV, shared by both views. */
+  private finish(dt: number, aim: number, sprint: boolean): void {
+    const cam = this.camera;
     // shake
     this.trauma = Math.max(0, this.trauma - TRAUMA_DECAY * dt);
     if (this.trauma > 0) {

@@ -224,7 +224,7 @@ export const MISSIONS: Mission[] = [
         objectives: [{ id: 'drop', text: L('Fly over the medina and drop the leaflets (E)', 'طير فوق المدينة وطيّح المناشير (E)'), event: 'airdrop', target: 'zone:medina' }],
       },
       {
-        objectives: [{ id: 'land', text: L('Land the plane near Douar Tifawt', 'نزّل الطيارة حدا دوار تيفاوت'), event: 'landed:douar', target: 'hideout' }],
+        objectives: [{ id: 'land', text: L('Land on the strip beside Douar Tifawt (flaps down, slow, brake with Space)', 'نزّل الطيارة فالمدرج حدا دوار تيفاوت (الفلاپس لتحت، بشوية، فرانا بـ Space)'), event: 'landed:douar', target: 'strip:douar' }],
       },
     ],
   },

@@ -10,7 +10,7 @@ import {
   latheGeo,
 } from '../assets/GeometryKit';
 import type { MaterialRole } from '../assets/Materials';
-import type { CollisionWorld } from './Collision';
+import type { CollisionWorld, BoxCollider } from './Collision';
 import type { Terrain } from './Terrain';
 
 export type BuildCtx = {
@@ -191,6 +191,7 @@ export function jar(ctx: BuildCtx, x: number, y: number, z: number, scale = 1, c
     12,
   );
   ctx.b.put('stone', g, x, y, z, ctx.rng() * 6, color, { uvScale: 0.8 });
+  ctx.col.addCircle(x, z, 0.32 * scale, y - 0.5, y + 0.9 * scale, false, 'jar');
 }
 
 /** Crenellated wall from A to B, split into terrain-following segments. */
@@ -429,6 +430,7 @@ export function stall(ctx: BuildCtx, x: number, z: number, angle: number): void 
   for (const [lx, lz, hh] of [[-W / 2, -D / 2, 2.6], [W / 2, -D / 2, 2.6], [-W / 2, D / 2, 2.1], [W / 2, D / 2, 2.1]] as [number, number, number][]) {
     const [px, pz] = toWorld(x, z, angle, lx, lz);
     b.put('wood', boxGeo(0.1, hh, 0.1), px, g + hh / 2, pz, angle, '#5b3a22');
+    col.addCircle(px, pz, 0.08, g - 1, g + hh, false, 'stall-post');
   }
   const color = AWNING[Math.floor(rng() * AWNING.length)];
   for (let sIdx = 0; sIdx < 5; sIdx += 1) {
@@ -450,6 +452,7 @@ export function stall(ctx: BuildCtx, x: number, z: number, angle: number): void 
     b.put('fabric', boxGeo(2, 1.6, 0.03), rx, g + 1.3, rz, angle, rc, { uvScale: 0.8 });
     b.put('fabric', boxGeo(1.4, 1.0, 0.035), rx, g + 1.3, rz, angle, shade(rc, 1.5), { uvScale: 0.8 });
     b.put('fabric', boxGeo(0.5, 0.5, 0.04), rx, g + 1.3, rz, angle, '#1f2c4a', { uvScale: 0.8 }, 0, Math.PI / 4);
+    col.addBox(rx, rz, 1, 0.05, angle, g + 0.5, g + 2.1, true, 'rug');
   }
   col.addBox(cx, cz, W / 2 - 0.1, 0.35, angle, g - 1, g + 0.9, false, 'stall');
 }
@@ -492,6 +495,7 @@ export function pottedPlant(ctx: BuildCtx, x: number, z: number, flowers: boolea
   const g = terrain.getHeight(x, z);
   b.put('pise', new THREE.CylinderGeometry(0.26, 0.18, 0.42, 10), x, g + 0.21, z, 0, '#b5653a');
   b.put('foliage', new THREE.IcosahedronGeometry(0.34, 0), x, g + 0.68, z, rng() * 3, '#5e7a3a');
+  ctx.col.addCircle(x, z, 0.28, g - 0.5, g + 1, false, 'pot');
   if (flowers) {
     for (let k = 0; k < 5; k += 1) {
       b.put('fabric', new THREE.IcosahedronGeometry(0.07, 0), x + (rng() - 0.5) * 0.5, g + 0.8 + rng() * 0.2, z + (rng() - 0.5) * 0.5, 0, rng() < 0.5 ? '#d8344a' : '#f2f0ea', { uvScale: 0 });
@@ -717,18 +721,20 @@ export function truck(ctx: BuildCtx, x: number, z: number, angle: number): void 
   col.addBox(x, z, 1.15, 3.2, angle, g - 1, g + 3, true, 'truck');
 }
 
-export function crate(ctx: BuildCtx, x: number, y: number, z: number, angle: number, size = 0.9, color = '#6f5a3a'): void {
+export function crate(ctx: BuildCtx, x: number, y: number, z: number, angle: number, size = 0.9, color = '#6f5a3a'): BoxCollider {
   const { b } = ctx;
   b.put('wood', boxGeo(size, size * 0.8, size * 1.3), x, y + size * 0.4, z, angle, color, { uvScale: 1 });
   for (const s of [-1, 1]) {
     const [bx, bz] = toWorld(x, z, angle, 0, s * size * 0.5);
     b.put('wood', boxGeo(size + 0.04, size * 0.84, 0.08), bx, y + size * 0.4, bz, angle, shade(color, 0.7), { uvScale: 1 });
   }
+  return ctx.col.addBox(x, z, size / 2, size * 0.68, angle, y - 0.5, y + size * 0.8, false, 'crate');
 }
 
 export function barrel(ctx: BuildCtx, x: number, y: number, z: number, color = '#4d5a3c'): void {
   const g = latheGeo([[0, 0], [0.36, 0], [0.4, 0.15], [0.43, 0.5], [0.4, 0.85], [0.36, 1.0], [0, 1.0]], 14);
   ctx.b.put('metal', g, x, y, z, ctx.rng() * 6, color, { uvScale: 0.7 });
+  ctx.col.addCircle(x, z, 0.43, y - 0.5, y + 1, false, 'barrel');
 }
 
 export function shade(hex: string, f: number): string {

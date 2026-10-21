@@ -307,6 +307,11 @@ export class CharacterRig {
     if (this.blade) this.sheathBlade();
   }
 
+  /** First person: shrink the head (and its headwear) so it never blocks the eye. */
+  hideHead(hidden: boolean): void {
+    this.bones[HEAD].scale.setScalar(hidden ? 0.001 : 1);
+  }
+
   get headBone(): THREE.Bone {
     return this.bones[HEAD];
   }
@@ -320,13 +325,13 @@ export class CharacterRig {
   }
 
   /** Swap the carried gun model (player weapon switching). */
-  equipGun(kind: 'rifle' | 'pistol' | 'musket' | 'smg' | 'sling' | 'shotgun'): void {
+  equipGun(kind: 'rifle' | 'pistol' | 'musket' | 'smg' | 'sling' | 'shotgun' | 'crossbow'): void {
     if (this.rifle?.name === kind) return;
     this.rifle?.removeFromParent();
     this.rifleInHands = false;
     let g = this.guns.get(kind);
     if (!g) {
-      g = kind === 'rifle' ? buildRifle() : kind === 'pistol' ? buildPistol() : kind === 'musket' ? buildMusket() : kind === 'sling' ? buildSling() : kind === 'shotgun' ? buildShotgun() : buildSmg();
+      g = kind === 'rifle' ? buildRifle() : kind === 'pistol' ? buildPistol() : kind === 'musket' ? buildMusket() : kind === 'sling' ? buildSling() : kind === 'shotgun' ? buildShotgun() : kind === 'crossbow' ? buildCrossbow() : buildSmg();
       this.guns.set(kind, g);
     }
     this.rifle = g;
@@ -755,6 +760,22 @@ function buildShotgun(): THREE.Mesh {
   p(new THREE.TorusGeometry(0.02, 0.004, 4, 10, Math.PI), '#2a2a2e', 0, 0.02, 0.03, 0, Math.PI / 2);
   p(new THREE.BoxGeometry(0.008, 0.62, 0.012), '#5a3a22', 0.03, -0.12, 0.04); // leather strap
   return finishGun(parts, 'shotgun', -0.78);
+}
+
+/** Crossbow: olive-wood tiller, steel prod across the front, sinew string and a loaded bolt. */
+function buildCrossbow(): THREE.Mesh {
+  const { parts, p } = gunParts();
+  p(new THREE.BoxGeometry(0.04, 0.62, 0.045), '#7a5030', 0, -0.2, 0.0); // tiller
+  p(new THREE.BoxGeometry(0.044, 0.22, 0.06), '#6a4426', 0, 0.2, 0.02, 0.15); // butt
+  p(new THREE.BoxGeometry(0.026, 0.05, 0.06), '#5c3b22', 0, 0.02, 0.045, -0.3); // grip
+  p(new THREE.BoxGeometry(0.5, 0.025, 0.02), '#4a4a50', 0, -0.48, -0.01); // prod
+  for (const s of [-1, 1]) p(new THREE.BoxGeometry(0.13, 0.022, 0.02), '#4a4a50', s * 0.29, -0.45, -0.01, 0, s * 0.35); // swept tips
+  for (const s of [-1, 1]) p(new THREE.CylinderGeometry(0.0025, 0.0025, 0.4, 4), '#d8c8a0', s * 0.17, -0.31, -0.02, 0, s * 1.05); // string
+  p(new THREE.CylinderGeometry(0.005, 0.005, 0.42, 5), '#9a7a4a', 0, -0.3, -0.03); // bolt shaft
+  p(new THREE.ConeGeometry(0.01, 0.04, 4), '#3a3a3e', 0, -0.53, -0.03, Math.PI); // bolt head
+  p(new THREE.BoxGeometry(0.03, 0.04, 0.03), '#3a3a3e', 0, -0.09, -0.03); // nut
+  p(new THREE.TorusGeometry(0.018, 0.004, 4, 10, Math.PI), '#2a2a2e', 0, 0.0, 0.03, 0, Math.PI / 2);
+  return finishGun(parts, 'crossbow', -0.56);
 }
 
 /** Curved Moroccan khanjar (koummiya) with brass hilt. */

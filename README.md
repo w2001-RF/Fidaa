@@ -22,13 +22,14 @@ Click **Begin the struggle**, then click the game view to capture the mouse. **F
 | --- | --- |
 | W A S D / mouse | move / look |
 | Shift · C · Space | sprint · crouch (sneak) · jump |
+| V · B (hold) | first-person / third-person view · look behind |
 | LMB · RMB · R | strike or fire (hold for the MAS-38) · aim · reload |
-| 1 – 7 / wheel | khanjar · Lebel rifle · Ruby pistol · moukahla musket · MAS-38 · shepherd's sling · hunting shotgun |
+| 1 – 8 / wheel | khanjar · Lebel rifle · Ruby pistol · moukahla musket · MAS-38 · shepherd's sling · hunting shotgun · crossbow |
 | E (hold) | interact: drink, take bread, search, gather, paste leaflets, cut wires, unlock. Behind an unaware guard: silent takedown |
 | Q · F · H | drink from the water skin · eat · heal (bandage or thyme) |
 | Tab / I · K · J · M · Esc | satchel · crafting · journal · map · pause (and save) |
-| Riding / driving | E to get on and off · W/S go and brake · A/D steer · Shift gallop/boost |
-| Flying | W/S throttle · Space climb · C dive · A/D bank · E drop leaflets over the medina |
+| Riding / driving | E to get on and off · W accelerate · S brake (press again to reverse) · A/D steer · Shift gallop (uses the mount's wind) · Space handbrake (jeep) |
+| Flying (MS.500 Criquet, GTA-style) | N engine on/off · W/S throttle · A/D rudder (and tailwheel) · Num 4/6 or ←/→ roll · Num 8/5 or ↑/↓ nose down/up · F/R flaps down/up (0°, 15°, 30°, 40°) · T/G trim nose-up/down · Space wheel brakes · E drop leaflets over the medina · move the mouse to look, leave it and the camera swings back behind the tail |
 
 ## How it plays
 - **Survive.** Hunger and thirst fall all the time. Refill at wells, fountains and the oasis pond, take bread from the douar oven, search jars, crates, shrines and fallen enemies, and gather thyme, deadwood and scrap in the wilds.
@@ -36,9 +37,16 @@ Click **Begin the struggle**, then click the game view to capture the mouse. **F
 - **Fight.** Five weapons, each with its own magazine. The khanjar is silent. The pistol and the MAS-38 share 7.65 mm rounds. The musket throws a scatter of lead. Find the pistol in the Khalifa's strongbox and the MAS-38 on the garrison's rack.
 - **Stay unseen.** Guards have vision cones and fill a detection meter (? → !). Daylight doubles their sight. Crouch in olive groves and scrub. Whistles alert guards within 34 m, gunshots within 40–95 m depending on the weapon.
 - **Grow.** XP from missions, takedowns, crafting and discoveries. Six skills with five ranks each: Stealth, Marksmanship, Endurance, Scavenger, Artisan, Survivalist.
-- **Hunt.** Dorcas gazelle herds and hares flee from you; wild boars charge when wounded or cornered. Crouch to get close and shoot or stab, then hold E on the carcass to skin it for raw meat, hide, bone and sinew. Grill the meat, and make a sling, a bone skinning knife, a boar-hide vest, or restore a double-barrel hunting shotgun.
+- **Hunt.** Dorcas gazelle herds and hares flee from you; wild boars charge when wounded or cornered. Crouch to get close and shoot or stab, then hold E on the carcass to skin it for raw meat, hide, bone and sinew. Grill the meat, and make a sling, a bone skinning knife, a boar-hide vest, or restore a double-barrel hunting shotgun. At the bench, build a crossbow: an almost silent bolt that drops a sentry or a gazelle at range. Bolts are whittled from wood and scrap.
+- **Crossbow bolts come back.** A bolt stays where it struck: in the dirt, in a wall, or lying by the man or beast it hit. Walk over it to pick it up. About one in six snaps.
+- **Trade.** Money is Protectorate francs. You start with 40 and find more on fallen soldiers (officers carry more). Every merchant in the souk buys and sells food, medicine, materials and tools; you sell your hides, ore and meat and buy bread, flour, tools and guns. The souk's first merchant and the nomad trader at the camp are smugglers and also deal in powder, cartridges, the musket, the shotgun and the Ruby pistol. Each Scavenger rank buys 4% cheaper and sells 6% dearer. Talk to a merchant (E) to open their stall.
+- **Camping.** From the crafting menu (K), build a camp anywhere flat and open: a campfire (tea, dried meat), a clay tannour oven (bread from flour, meat tagine), a workbench that works like Si Lahcen's, and a black goat-hair khaima where you sleep until dawn or dusk and the game saves. Camps are saved with the game.
 - **Cut and quarry.** Craft a woodcutter's axe and a quarryman's hammer at the bench. Fell olive, argan and palm trees for wood (palms give dates), and break rocks for stone and lead ore, which is richest near the old mine. Smelt the ore into scrap or cast lead shot.
 - **Ride and drive.** A donkey at the douar, a mule at the oasis, the Caïd's Barb horse in the kasbah stables, a camel at the nomad camp, the garrison's Willys jeep (it runs down whatever stands in its way), a fishing boat on the Middle Atlas lake, and the train that shuttles between the two halts of the northern line.
+- **Handling.** The jeep has inertia, brakes and a handbrake, front wheels that steer, grip that is lower off the road (push too hard and it runs wide or slides), and it slows climbing and speeds up going downhill. Mounts pivot at a walk but need room at a gallop, and tire when galloping. The boat rows in strokes, carries its way and drifts in turns. The speedometer is at the bottom of the screen.
+- **Flying.** The garrison's plane is a Morane-Saulnier MS.500 Criquet, the French-built Fieseler Storch that the French army flew in 1945 (Argus 240 hp, 2,050 rpm), flown with its real figures: 175 km/h flat out, 150 km/h cruise at about 65% power, stall at 67 km/h clean and 50 km/h with 40° of flap, a 4.8 m/s climb, a take-off run of about 50 m and a landing roll of a few dozen metres. The model covers lift with a stall at 17° (fixed slats), flaps, induced and parasite drag, a propeller whose thrust fades with speed, ground effect, banked turns, sideslip from the rudder, dihedral, adverse yaw, a wing that drops in a stall, pitch stability toward the trimmed angle (pitch sets the speed, throttle sets the climb), and a taildragger on the ground: tail-down, tailwheel steering, wheel brakes that can pivot her or tip her onto her nose. To take off: N, one notch of flap (F), trim nose-up (T), full throttle (W); she lifts off by herself, then hold 5 to climb. To land: full flap, about 60 km/h, a gentle sink (under 3.5 m/s), wings level, then Space to brake. The instruments show airspeed, altitude, climb, heading, rpm, throttle, flaps and trim, with a stall warning.
+- **Airstrips.** The garrison's strip west of the post, and a 120 m field strip just east of Douar Tifawt with a windsock, edge flags, threshold stones and a mechanic's shelter. Mission 6 ends with a landing on it.
+- **Collision.** Walls, houses, trees, cactus, rocks, jars, crates, barrels, stall posts and hanging rugs are solid, as are people, animals and parked vehicles. Low stones are stepped over. Bullets stop on trunks and rocks. A felled tree or broken rock stops blocking.
 - **Explore.** The map starts under fog. Nine landmarks wait in the wilds (Roman ruins, a shepherds' cave, a nomad camp, a lead mine, an olive press, an ambushed convoy, an Atlas lookout, a fidāʾiyīn hideaway, a ruined ksar), each with loot and XP.
 - **Missions.** (1) Bread and Water; (2) Words of Freedom; (3) Cut the Wires; (4) The Caïd's Prison; (5) Guns for the Mountains; (6) Wings over Tadwart: steal the garrison's liaison plane, drop leaflets over the medina from the air, and land near the douar.
 - **Saving.** Progress autosaves to IndexedDB on every mission step, every minute, on pause and when the tab is hidden. If IndexedDB is blocked, the save falls back to a cookie without the map fog. Pause → Save the game saves on demand; **Continue the struggle** on the title screen resumes.
@@ -58,11 +66,14 @@ SOFTWARE_GL=1 CI=1 npx playwright test    # rehearse CI: CPU WebGL, simulated ga
 | Spec | Checks |
 | --- | --- |
 | `visual` | title → play, WASD moves, canvas is not blank |
-| `features` | language switch and persistence, crafting and the workbench, weapon slots and magazines, exploration and fog, skills and settings, save and continue |
+| `features` | language switch and persistence, crafting and the workbench, weapon slots and magazines, exploration and fog, skills and settings, save and continue, the crossbow, first-person and look-behind views |
 | `bot-playtest` | real input through mission 1–2, eating, a silent takedown, death and retry |
 | `campaign` | all six missions to the victory screen, including the flight |
 | `hunting` | shoot a hare, skin it, grill the meat, craft a sling; fell a tree and quarry a rock |
 | `rides` | ride the donkey, drive the jeep, row the boat, take the train, take off in the plane |
+| `plane` | the Criquet's cockpit key by key: on the ground the cold engine (throttle moves, no rpm), N starter and idle, F/R flap notches and crank travel, T/G trim, Space holding her at full power, rudder taxi steering, braking to a stop, engine shut-down; in the air ailerons (numpad 4/6 and ←/→) roll and bank her into turns, elevator (numpad 5/8 and ↓/↑) pitches, climbs and dives, rudder (A/D) slips and yaws, throttle cut glides and full power climbs, flaps slow her, and a held pull stalls her (warning on), with recovery |
+| `economy` | shoot bolts into the ground and pick them back up; sell hides and ore and buy bread, an axe and a crossbow from a souk smuggler; build a fire, an oven, a workbench and a tent, cook a tagine and bread, use the bench, sleep in the tent |
+| `collision` | walk into a tree trunk and a parked jeep and stop at them; the jeep accelerates, shows its speed and brakes to a stop; flight instruments and the stall warning |
 | `perf` (load test) | flythrough of every zone and landmark at day and night plus a garrison firefight. Asserts draw calls ≤ 340, triangles ≤ 900k, textures ≤ 110, heap growth ≤ 120 MB, and p95 frame ≤ 34 ms on a GPU. Writes `artifacts/perf-metrics.json` |
 
 ## Deploy (GitHub Pages)

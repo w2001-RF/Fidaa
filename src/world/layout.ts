@@ -54,14 +54,56 @@ export const LAKE = { x: -172, z: -52, r: 24, level: -1.2, water: 19 };
 /** Narrow-gauge railway across the north with a halt at each end. */
 export const RAIL: number[][] = [[-132, 168], [-92, 163], [-44, 158], [0, 152], [48, 156], [88, 162], [120, 165]];
 
-/** Dirt airstrip of the garrison, west of the post. */
-export const AIRSTRIP = { x: 48, z: -168, halfW: 10, halfL: 42, height: 3 };
+/** A dirt landing strip: centre, half width and half length (along `angle`), flattened to `height`. */
+export type Strip = { id: 'post' | 'douar'; x: number; z: number; halfW: number; halfL: number; angle: number; height: number };
 
-/** Ground reserved for water, track and runway: no trees, rocks, scrub or loot there. */
+/** Dirt airstrip of the garrison, west of the post. */
+export const AIRSTRIP: Strip = { id: 'post', x: 48, z: -168, halfW: 10, halfL: 42, angle: 0, height: 3 };
+
+/**
+ * The douar's own field strip, just east of the village and running east-west:
+ * 120 m of packed earth, plenty for a Criquet (it lifts off in about 50 m and
+ * stops in a few dozen).
+ */
+export const DOUAR_STRIP: Strip = { id: 'douar', x: -46, z: 118, halfW: 8, halfL: 60, angle: Math.PI / 2, height: 3 };
+
+export const STRIPS: Strip[] = [AIRSTRIP, DOUAR_STRIP];
+
+/** Point in a strip's frame: x across, z along the runway. */
+export function stripLocal(s: Strip, x: number, z: number): [number, number] {
+  const dx = x - s.x;
+  const dz = z - s.z;
+  const c = Math.cos(s.angle);
+  const n = Math.sin(s.angle);
+  return [dx * c - dz * n, dx * n + dz * c];
+}
+
+/** The strip under (x, z), if any. */
+export function stripAt(x: number, z: number, pad = 0): Strip | null {
+  for (const s of STRIPS) {
+    const [lx, lz] = stripLocal(s, x, z);
+    if (Math.abs(lx) < s.halfW + pad && Math.abs(lz) < s.halfL + pad) return s;
+  }
+  return null;
+}
+
+/** Distance outside a strip's rectangle (0 on it). */
+export function distToStrip(s: Strip, x: number, z: number): number {
+  const [lx, lz] = stripLocal(s, x, z);
+  return Math.hypot(Math.max(0, Math.abs(lx) - s.halfW), Math.max(0, Math.abs(lz) - s.halfL));
+}
+
+/** Ground reserved for water, track and runways: no trees, rocks, scrub or loot there. */
 export function reserved(x: number, z: number, pad = 0): boolean {
   if (Math.hypot(x - LAKE.x, z - LAKE.z) < LAKE.r + 4 + pad) return true;
   if (distToPolyline(x, z, RAIL) < 4.5 + pad) return true;
-  return Math.abs(x - AIRSTRIP.x) < AIRSTRIP.halfW + 4 + pad && Math.abs(z - AIRSTRIP.z) < AIRSTRIP.halfL + 6 + pad;
+  // runways plus an approach clear of obstacles at each end
+  for (const s of STRIPS) {
+    const [lx, lz] = stripLocal(s, x, z);
+    if (Math.abs(lx) < s.halfW + 4 + pad && Math.abs(lz) < s.halfL + 6 + pad) return true;
+    if (Math.abs(lx) < s.halfW + 2 + pad && Math.abs(lz) < s.halfL + 30 + pad) return true;
+  }
+  return false;
 }
 
 /** Total rail length and a point/heading at arc length s. */

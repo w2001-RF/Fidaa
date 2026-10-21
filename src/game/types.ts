@@ -51,7 +51,9 @@ export type InteractKind =
   | 'bench'
   | 'carcass'
   | 'harvest'
-  | 'ride';
+  | 'ride'
+  | 'trade'
+  | 'cook';
 
 export type Interactable = {
   id: string;
@@ -75,6 +77,11 @@ export type Interactable = {
 };
 
 export type ItemId =
+  | 'francs'
+  | 'flour'
+  | 'tagine'
+  | 'tea'
+  | 'driedMeat'
   | 'bread'
   | 'dates'
   | 'herbs'
@@ -83,6 +90,7 @@ export type ItemId =
   | 'ammo'
   | 'pistolAmmo'
   | 'shot'
+  | 'bolt'
   | 'scrap'
   | 'cloth'
   | 'wood'

@@ -65,12 +65,18 @@ test('mounts and vehicles: donkey, jeep, boat, train and plane', async ({ page }
   await wait(page, 200);
   expect(await riding(page), 'off the train').toBeNull();
 
-  // the plane: full throttle down the strip with Space held; she lifts off past 22 m/s
+  // the Criquet, flown like the real thing: N starts the engine, F one notch of flap,
+  // T winds the trim nose-up for take-off, W opens the throttle; she lifts off by herself
+  // at about 57 km/h, then numpad 5 holds the nose up for the climb
   await getOn(page, 'plane');
+  await page.keyboard.press('KeyN');
+  await wait(page, 2000);
+  await page.keyboard.press('KeyF');
+  await hold(page, 'KeyT', 3000);
   await page.keyboard.down('KeyW');
-  await page.keyboard.down('Space');
-  await wait(page, 6000);
-  await page.keyboard.up('Space');
+  for (let i = 0; i < 60 && !(await ride(page, 'plane')).flying; i += 1) await wait(page, 200);
+  await hold(page, 'Numpad5', 800);
+  await wait(page, 2500);
   await page.keyboard.up('KeyW');
   const p = await ride(page, 'plane');
   expect(p.crashed, (p as R & { reason?: string }).reason).toBe(false);

@@ -1,3 +1,4 @@
+import type { Ware } from '../game/Trade';
 import { ITEMS, SKILLS, SKILL_MAX, SKILL_ORDER, UPGRADE_NAMES, WEAPONS, type ItemKind, type Recipe, type Skill, type Upgrade, type WeaponId } from '../game/Items';
 import type { Mission } from '../game/Quests';
 import type { ItemId } from '../game/types';
@@ -81,6 +82,8 @@ export class Hud {
   private readonly crosshair = $('#crosshair');
   private readonly hitmarker = $('#hitmarker');
   private readonly prompt = $('#prompt');
+  private readonly gauges = $('#ride-gauges');
+  private gaugesHtml = '';
   private readonly promptText = $('#prompt-text');
   private readonly promptRing = $('#prompt-ring circle') as unknown as SVGCircleElement;
   private readonly indicatorsEl = $('#indicators');
@@ -249,6 +252,21 @@ export class Hud {
     c.fill();
   }
 
+  /** Speedometer, or the flight instruments in the plane; null hides them. */
+  setGauges(cells: { label: string; value: string; warn?: boolean }[] | null): void {
+    if (!cells) {
+      this.gauges.classList.add('hidden');
+      this.gaugesHtml = '';
+      return;
+    }
+    this.gauges.classList.remove('hidden');
+    const html = cells.map((c) => `<div class="rg-cell${c.warn ? ' warn' : ''}">${c.label ? `<small>${esc(c.label)}</small>` : ''}<b>${esc(c.value)}</b></div>`).join('');
+    if (html !== this.gaugesHtml) {
+      this.gauges.innerHTML = html;
+      this.gaugesHtml = html;
+    }
+  }
+
   setPrompt(text: string | null, progress = 0, takedown = false): void {
     if (!text) {
       this.prompt.classList.add('hidden');
@@ -375,7 +393,77 @@ export class Hud {
     const st = document.createElement('div');
     st.className = 'stats-row';
     st.innerHTML = `<span>${t('inv.kills')} <b>${stats.kills}</b></span><span>${t('inv.takedowns')} <b>${stats.takedowns}</b></span><span>${t('inv.days')} <b>${stats.days}</b></span>`;
-    body.replaceChildren(gear, section(t('inv.supplies'), ['food', 'medical', 'quest']), section(t('inv.ammo'), ['ammo']), section(t('inv.materials'), ['material']), st);
+    const purse = document.createElement('p');
+    purse.className = 'purse';
+    purse.innerHTML = `<span class="qi coin"></span>${t('trade.purse', { n: inv.francs })}`;
+    body.replaceChildren(purse, gear, section(t('inv.supplies'), ['food', 'medical', 'quest']), section(t('inv.ammo'), ['ammo']), section(t('inv.materials'), ['material']), st);
+  }
+
+  /** A trader's stall: what they sell (buy column) and what they pay for (sell column). */
+  renderTrade(
+    wares: { w: Ware; buy: number; sell: number; have: number; owned: boolean }[],
+    francs: number,
+    smuggler: boolean,
+    buy: (w: Ware) => void,
+    sell: (w: Ware, all: boolean) => void,
+  ): void {
+    const body = $('#tab-trade');
+    const head = document.createElement('p');
+    head.className = 'purse';
+    head.innerHTML = `<span class="qi coin"></span>${t('trade.purse', { n: francs })}<small>${esc(t(smuggler ? 'trade.smuggler' : 'trade.honest'))}</small>`;
+    const label = (w: Ware) =>
+      w.item ? `${esc(tr(ITEMS[w.item].name))}${w.qty > 1 ? ` ×${w.qty}` : ''}` : w.weapon ? esc(tr(WEAPONS[w.weapon].name)) : w.upgrade ? esc(tr(UPGRADE_NAMES[w.upgrade])) : '';
+    const icon = (w: Ware) => (w.item ? ITEMS[w.item].icon : w.weapon ? 'gun' : 'tool');
+    const col = (title: string, rows: HTMLElement[]) => {
+      const c = document.createElement('div');
+      c.className = 'trade-col';
+      const h = document.createElement('h4');
+      h.textContent = title;
+      c.append(h, ...rows);
+      return c;
+    };
+    const buyRows = wares
+      .filter((x) => x.w.buy)
+      .map((x) => {
+        const row = document.createElement('div');
+        row.className = `ware${x.owned ? ' done' : ''}`;
+        row.dataset.ware = x.w.id;
+        row.innerHTML = `<span class="qi ${icon(x.w)}"></span><span class="ware-name">${label(x.w)}</span>`;
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'btn small buy';
+        b.textContent = x.owned ? t('craft.owned') : t('trade.price', { n: x.buy });
+        b.disabled = x.owned || francs < x.buy;
+        b.addEventListener('click', () => buy(x.w));
+        row.appendChild(b);
+        return row;
+      });
+    const sellRows = wares
+      .filter((x) => x.w.sell && x.w.item)
+      .map((x) => {
+        const row = document.createElement('div');
+        row.className = `ware${x.have <= 0 ? ' zero' : ''}`;
+        row.dataset.ware = x.w.id;
+        row.innerHTML = `<span class="qi ${icon(x.w)}"></span><span class="ware-name">${esc(tr(ITEMS[x.w.item as ItemId].name))} <b>×${x.have}</b></span>`;
+        const one = document.createElement('button');
+        one.type = 'button';
+        one.className = 'btn small sell';
+        one.textContent = t('trade.price', { n: x.sell });
+        one.disabled = x.have <= 0;
+        one.addEventListener('click', () => sell(x.w, false));
+        const all = document.createElement('button');
+        all.type = 'button';
+        all.className = 'btn small sell-all';
+        all.textContent = t('trade.all');
+        all.disabled = x.have <= 1;
+        all.addEventListener('click', () => sell(x.w, true));
+        row.append(one, all);
+        return row;
+      });
+    const grid = document.createElement('div');
+    grid.className = 'trade-grid';
+    grid.append(col(t('trade.buy'), buyRows), col(t('trade.sell'), sellRows));
+    body.replaceChildren(head, grid);
   }
 
   renderCraft(list: { r: Recipe; can: boolean; reason: string; done: boolean }[], craft: (r: Recipe) => void, atBench: boolean): void {

@@ -1,9 +1,14 @@
 import { L, type Text } from '../i18n';
 import type { ItemId, LootBundle } from './types';
 
-export type ItemKind = 'food' | 'medical' | 'ammo' | 'material' | 'quest';
+export type ItemKind = 'food' | 'medical' | 'ammo' | 'material' | 'quest' | 'money';
 
 export const ITEMS: Record<ItemId, { name: Text; desc: Text; icon: string; kind: ItemKind }> = {
+  francs: { name: L('Francs', 'الفرنك'), desc: L('Protectorate francs: buy and sell in the souk', 'فرنك الحماية: بيع وشري فالسوق'), icon: 'coin', kind: 'money' },
+  flour: { name: L('Flour', 'الطحين'), desc: L('Bake khobz in a clay oven', 'طيّب بيه الخبز فالفرّان'), icon: 'flour', kind: 'material' },
+  tagine: { name: L('Tagine', 'الطاجين'), desc: L('Eat: +80 hunger and heals 25', 'كول: +80 شبعة وكيداوي 25'), icon: 'tagine', kind: 'food' },
+  tea: { name: L('Mint tea', 'أتاي بالنعناع'), desc: L('Drink: +40 thirst, stamina restored', 'شرب: +40 ريق، والنفس كيرجع'), icon: 'tea', kind: 'food' },
+  driedMeat: { name: L('Dried meat (khlii)', 'الخليع'), desc: L('Eat: +35 hunger. Keeps for the road.', 'كول: +35 شبعة. كيصبر فالطريق.'), icon: 'jerky', kind: 'food' },
   bread: { name: L('Khobz (bread)', 'الخبز'), desc: L('Eat: +40 hunger', 'كول: +40 شبعة'), icon: 'bread', kind: 'food' },
   dates: { name: L('Dates', 'التمر'), desc: L('Eat: +18 hunger, +6 thirst', 'كول: +18 شبعة، +6 ريق'), icon: 'dates', kind: 'food' },
   water: { name: L('Guerba (water skin)', 'القربة'), desc: L('Drink: +35 thirst per sip', 'شرب: +35 فكل جغمة'), icon: 'water', kind: 'food' },
@@ -12,6 +17,7 @@ export const ITEMS: Record<ItemId, { name: Text; desc: Text; icon: string; kind:
   ammo: { name: L('Rifle cartridges', 'قرطاس الفيزي'), desc: L('8 mm Lebel rounds', 'قرطاس لوبيل 8 ملم'), icon: 'ammo', kind: 'ammo' },
   pistolAmmo: { name: L('Pistol rounds', 'قرطاس الفردي'), desc: L('7.65 mm: pistol and MAS-38', '7.65 ملم: الفردي والميتراييت'), icon: 'pammo', kind: 'ammo' },
   shot: { name: L('Musket charges', 'حشوات المكحلة'), desc: L('Powder and lead shot for the moukahla', 'البارود والرصاص ديال المكحلة'), icon: 'shot', kind: 'ammo' },
+  bolt: { name: L('Crossbow bolts', 'سهام القوس'), desc: L('Olive-wood shafts with iron heads', 'عصي الزيتون براس ديال الحديد'), icon: 'bolt', kind: 'ammo' },
   scrap: { name: L('Scrap metal', 'الخردة'), desc: L('Nails, wire, brass: for crafting', 'مسامر، سلك، نحاس: للصنعة'), icon: 'scrap', kind: 'material' },
   cloth: { name: L('Cloth', 'الثوب'), desc: L('Rags and wool: for crafting', 'شراوط وصوف: للصنعة'), icon: 'cloth', kind: 'material' },
   wood: { name: L('Wood', 'الحطب'), desc: L('Olive and argan wood: for crafting', 'حطب الزيتون والأركان: للصنعة'), icon: 'wood', kind: 'material' },
@@ -28,14 +34,15 @@ export const ITEMS: Record<ItemId, { name: Text; desc: Text; icon: string; kind:
 };
 
 export const emptyInventory = (): Record<ItemId, number> => ({
-  bread: 0, dates: 0, herbs: 0, water: 0, bandage: 0, ammo: 0, pistolAmmo: 0, shot: 0, scrap: 0, cloth: 0, wood: 0, powder: 0,
+  francs: 0, flour: 0, tagine: 0, tea: 0, driedMeat: 0,
+  bread: 0, dates: 0, herbs: 0, water: 0, bandage: 0, ammo: 0, pistolAmmo: 0, shot: 0, bolt: 0, scrap: 0, cloth: 0, wood: 0, powder: 0,
   rawMeat: 0, cookedMeat: 0, hide: 0, bone: 0, sinew: 0, stone: 0, ore: 0, leaflet: 0, key: 0,
 });
 
 // ------------------------------------------------------------------ weapons
 
-export type WeaponId = 'blade' | 'rifle' | 'pistol' | 'musket' | 'smg' | 'sling' | 'shotgun';
-export type AmmoId = 'ammo' | 'pistolAmmo' | 'shot';
+export type WeaponId = 'blade' | 'rifle' | 'pistol' | 'musket' | 'smg' | 'sling' | 'shotgun' | 'crossbow';
+export type AmmoId = 'ammo' | 'pistolAmmo' | 'shot' | 'bolt';
 
 export type GunDef = {
   ammo: AmmoId;
@@ -100,9 +107,16 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     icon: 'shotgun',
     gun: { ammo: 'shot', clip: 2, reload: 2.2, interval: 0.32, auto: false, damage: 21, headMul: 1.5, range: 48, pellets: 9, spreadHip: 0.075, spreadAim: 0.05, noise: 85, trauma: 0.42, fov: 3.2, pistolPose: false },
   },
+  crossbow: {
+    slot: 8,
+    name: L('Crossbow', 'القوس'),
+    icon: 'crossbow',
+    // one heavy bolt, slow to span, almost silent: the hunter's and the sentry-killer's weapon
+    gun: { ammo: 'bolt', clip: 1, reload: 1.9, interval: 0.5, auto: false, damage: 80, headMul: 2.6, range: 120, pellets: 1, spreadHip: 0.035, spreadAim: 0.003, noise: 8, trauma: 0.08, fov: 0.8, pistolPose: false },
+  },
 };
 
-export const WEAPON_ORDER: WeaponId[] = ['blade', 'rifle', 'pistol', 'musket', 'smg', 'sling', 'shotgun'];
+export const WEAPON_ORDER: WeaponId[] = ['blade', 'rifle', 'pistol', 'musket', 'smg', 'sling', 'shotgun', 'crossbow'];
 
 // ------------------------------------------------------------------ crafting
 
@@ -120,7 +134,14 @@ export type Recipe = {
   bench: boolean;
   /** minimum Artisan rank */
   artisan?: number;
+  /** cooked at a clay oven or over a fire (yours at a camp, or the douar's oven) */
+  station?: 'oven' | 'fire';
+  /** builds a camp structure in front of you */
+  build?: CampKind;
 };
+
+/** What you can set up at a camp. */
+export type CampKind = 'bench' | 'oven' | 'fire' | 'tent';
 
 export type Upgrade = 'bigSkin' | 'sharpBlade' | 'hillCloak' | 'satchel' | 'skinningKnife' | 'hideVest' | 'axe' | 'hammer';
 
@@ -143,6 +164,18 @@ export const RECIPES: Recipe[] = [
   { id: 'knife', name: L('Bone skinning knife', 'موس السلخ'), desc: L('Skin twice as fast and take more hide and meat.', 'سلخ جوج مرات أسرع وخود جلد ولحم كثر.'), cost: { bone: 2, scrap: 1, sinew: 1 }, upgrade: 'skinningKnife', bench: false },
   { id: 'vest', name: L('Boar-hide vest', 'صدرية من جلد الحلوف'), desc: L('Thick hide under the djellaba: 20% less damage.', 'جلد غليظ تحت الجلابة: 20% ضرر أقل.'), cost: { hide: 3, sinew: 2, bone: 1 }, upgrade: 'hideVest', bench: true },
   { id: 'shotgun', name: L('Restore the hunting shotgun', 'صلّح فيزي الصيد'), desc: L('Two barrels of buckshot: brutal up close, good for boar.', 'جوج فواهي ديال الرش: قاسح من قريب، مزيان للحلوف.'), cost: { scrap: 4, wood: 2, hide: 1, bone: 2 }, weapon: 'shotgun', gives: { shot: 4 }, bench: true, artisan: 1 },
+  { id: 'crossbow', name: L('Build a crossbow', 'صنع القوس'), desc: L('Olive stock, a steel bow from a cart spring, sinew string. Silent and deadly at range.', 'قاعدة زيتون، قوس من ريسور الكرّوسة، وتر من العصب. بلا حس وقاتل من بعيد.'), cost: { wood: 3, scrap: 3, sinew: 2, bone: 1 }, weapon: 'crossbow', gives: { bolt: 6 }, bench: true, artisan: 1 },
+  { id: 'bolts', name: L('Crossbow bolts ×4', 'سهام القوس ×4'), desc: L('Whittled shafts with hammered iron heads.', 'عصي منجورة براس ديال الحديد المضروب.'), cost: { wood: 1, scrap: 1 }, gives: { bolt: 4 }, bench: false },
+  // ---- camp: build anywhere, in front of you
+  { id: 'camp-fire', name: L('Campfire', 'العافية'), desc: L('A ring of stones: grill, brew tea, dry meat. Lights the night.', 'دورة ديال الحجر: شوي، طيّب أتاي، نشّف اللحم. كتضوّي فالليل.'), cost: { wood: 3, stone: 3 }, build: 'fire', bench: false },
+  { id: 'camp-oven', name: L('Clay oven (tannour)', 'الفرّان ديال الطين'), desc: L('Bake bread from flour, simmer a tagine.', 'طيّب الخبز من الطحين، والطاجين.'), cost: { stone: 6, wood: 2, cloth: 1 }, build: 'oven', bench: false },
+  { id: 'camp-bench', name: L('Camp workbench', 'بنكة الخيمة'), desc: L('A plank table with tools: workbench recipes at your camp.', 'طبلة ديال اللوح بالعدة: صنعة البنكة فالمخيّم ديالك.'), cost: { wood: 5, scrap: 2 }, build: 'bench', bench: false },
+  { id: 'camp-tent', name: L('Khaima (tent)', 'الخيمة'), desc: L('Sleep until dawn or dusk; the game saves.', 'نعس حتى للفجر ولا للمغرب؛ اللعبة كتسجّل.'), cost: { cloth: 4, hide: 2, wood: 3 }, build: 'tent', bench: false },
+  // ---- cooking at a camp
+  { id: 'khobz', name: L('Bake khobz ×3', 'طيّب الخبز ×3'), desc: L('Flour, water and an hour in the oven.', 'الطحين، الما وساعة فالفرّان.'), cost: { flour: 2, wood: 1, water: 1 }, gives: { bread: 3 }, bench: false, station: 'oven' },
+  { id: 'tagine', name: L('Meat tagine', 'طاجين باللحم'), desc: L('Slow-cooked meat and thyme: +80 hunger, heals 25.', 'لحم وزعتر على خاطرو: +80 شبعة، كيداوي 25.'), cost: { rawMeat: 2, herbs: 1, water: 1 }, gives: { tagine: 1 }, bench: false, station: 'oven' },
+  { id: 'tea', name: L('Mint tea ×2', 'أتاي ×2'), desc: L('Thyme and wild mint brewed strong: thirst and stamina.', 'زعتر ونعناع بلدي: للريق وللنفس.'), cost: { herbs: 1, water: 1 }, gives: { tea: 2 }, bench: false, station: 'fire' },
+  { id: 'khlii', name: L('Dry meat (khlii) ×2', 'نشّف الخليع ×2'), desc: L('Smoked over the fire, it keeps for the road.', 'مدخّن على العافية، كيصبر فالطريق.'), cost: { rawMeat: 2, wood: 1 }, gives: { driedMeat: 2 }, bench: false, station: 'fire' },
   { id: 'satchel', name: L('Smuggler satchel', 'شكارة المهرّب'), desc: L('Scavenge one extra material from every search.', 'زيد مادة وحدة من كل تفتيش.'), cost: { cloth: 3, scrap: 2, wood: 1 }, upgrade: 'satchel', bench: true, artisan: 2 },
 ];
 

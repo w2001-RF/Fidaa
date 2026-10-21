@@ -84,8 +84,17 @@ export class CollisionWorld {
     return c;
   }
 
-  /** Push a vertical capsule (feet y .. y+height) out of colliders. Returns true when it touched something. */
+  /**
+   * Push a vertical capsule (feet y .. y+height) out of colliders. Returns true
+   * when it touched something. Two passes, so a push out of one collider into
+   * its neighbour (corners, a tree beside a wall) is settled in the same frame.
+   */
   resolveCircle(pos: THREE.Vector3, radius: number, height: number): boolean {
+    const a = this.resolvePass(pos, radius, height);
+    return (a && this.resolvePass(pos, radius, height)) || a;
+  }
+
+  private resolvePass(pos: THREE.Vector3, radius: number, height: number): boolean {
     let touched = false;
     const ids = this.query(pos.x - radius, pos.z - radius, pos.x + radius, pos.z + radius);
     for (const id of ids) {
@@ -317,23 +326,52 @@ function segBox(c: BoxCollider, from: THREE.Vector3, dx: number, dy: number, dz:
   return tmin;
 }
 
+/** Segment against a capped vertical cylinder: the side wall and the top and bottom caps. */
 function segCircle(c: CircleCollider, from: THREE.Vector3, dx: number, dy: number, dz: number): number {
   const fx = from.x - c.x;
   const fz = from.z - c.z;
   const a = dx * dx + dz * dz;
-  const b = 2 * (fx * dx + fz * dz);
-  const cc = fx * fx + fz * fz - c.r * c.r;
-  let t: number;
-  if (cc <= 0) {
-    t = 0;
+  let tmin = 0;
+  let tmax = 1;
+  if (a < 1e-9) {
+    // vertical segment: inside the disc or not at all
+    if (fx * fx + fz * fz > c.r * c.r) return -1;
   } else {
-    if (a < 1e-9) return -1;
+    const b = 2 * (fx * dx + fz * dz);
+    const cc = fx * fx + fz * fz - c.r * c.r;
     const disc = b * b - 4 * a * cc;
     if (disc < 0) return -1;
-    t = (-b - Math.sqrt(disc)) / (2 * a);
-    if (t < 0 || t > 1) return -1;
+    const s = Math.sqrt(disc);
+    tmin = Math.max(tmin, (-b - s) / (2 * a));
+    tmax = Math.min(tmax, (-b + s) / (2 * a));
+    if (tmin > tmax) return -1;
   }
-  const y = from.y + dy * t;
-  if (y < c.y0 || y > c.y1) return -1;
-  return t;
+  if (Math.abs(dy) < 1e-9) {
+    if (from.y < c.y0 || from.y > c.y1) return -1;
+  } else {
+    let t1 = (c.y0 - from.y) / dy;
+    let t2 = (c.y1 - from.y) / dy;
+    if (t1 > t2) [t1, t2] = [t2, t1];
+    tmin = Math.max(tmin, t1);
+    tmax = Math.min(tmax, t2);
+    if (tmin > tmax) return -1;
+  }
+  return tmin;
+}
+
+/** Push a moving circle out of another circle (characters, animals, parked rides). */
+export function pushApart(pos: THREE.Vector3, r: number, x: number, z: number, r2: number): boolean {
+  const dx = pos.x - x;
+  const dz = pos.z - z;
+  const min = r + r2;
+  const d2 = dx * dx + dz * dz;
+  if (d2 >= min * min) return false;
+  const d = Math.sqrt(d2);
+  if (d < 1e-4) {
+    pos.x = x + min;
+    return true;
+  }
+  pos.x = x + (dx / d) * min;
+  pos.z = z + (dz / d) * min;
+  return true;
 }

@@ -682,6 +682,11 @@ export class AudioSystem {
     if (weapon === 'sling') {
       // whirl and release: a soft whoosh, no report
       for (let k = 0; k < 2; k += 1) this.noiseBurst(t + k * 0.12, 0.12, 900 + k * 500, 0.12, this.sfx, 'bandpass');
+    } else if (weapon === 'crossbow') {
+      // string slap and the hiss of the bolt leaving
+      this.tone(220, 0.12, 0.35, 'triangle', t, this.sfx, 0.35);
+      this.noiseBurst(t, 0.05, 2600, 0.3, this.sfx, 'bandpass');
+      this.noiseBurst(t + 0.03, 0.25, 1500, 0.08, this.sfx, 'highpass');
     } else if (weapon === 'shotgun') {
       this.noiseBurst(t, 0.3, 1300, 0.95, this.sfx, 'lowpass');
       this.tone(110, 0.3, 0.6, 'sine', t, this.sfx, 0.4);

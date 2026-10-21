@@ -67,6 +67,7 @@
 
         <div id="crosshair"><i></i><i></i><i></i><i></i></div>
         <div id="hitmarker"></div>
+        <div id="ride-gauges" class="hidden"></div>
         <div id="prompt" class="hidden"><kbd>E</kbd><span id="prompt-text"></span><svg viewBox="0 0 36 36" id="prompt-ring"><circle cx="18" cy="18" r="15" /></svg></div>
         <div id="indicators"></div>
         <div id="damage-dir"></div>
@@ -110,7 +111,9 @@
             <div><kbd>W A S D</kbd> <span data-i18n="ctl.move"></span></div><div><kbd>Mouse</kbd> <span data-i18n="ctl.look"></span></div>
             <div><kbd>Shift</kbd> <span data-i18n="ctl.sprint"></span></div><div><kbd>C</kbd> <span data-i18n="ctl.crouch"></span></div>
             <div><kbd>LMB</kbd> <span data-i18n="ctl.strike"></span></div><div><kbd>RMB</kbd> <span data-i18n="ctl.aim"></span></div>
-            <div><kbd>1–7</kbd> <span data-i18n="ctl.weapons"></span></div><div><kbd>R</kbd> <span data-i18n="ctl.reload"></span></div>
+            <div><kbd>1–8</kbd> <span data-i18n="ctl.weapons"></span></div><div><kbd>R</kbd> <span data-i18n="ctl.reload"></span></div>
+            <div><kbd>V</kbd> <span data-i18n="ctl.view"></span></div><div><kbd>B</kbd> <span data-i18n="ctl.lookBack"></span></div>
+            <div><kbd>Num 4 5 6 8</kbd> <span data-i18n="ctl.plane"></span></div><div><kbd>N · F/R · T/G</kbd> <span data-i18n="ctl.cockpit"></span></div>
             <div><kbd>E</kbd> <span data-i18n="ctl.interact"></span></div><div><kbd>Q F H</kbd> <span data-i18n="ctl.consume"></span></div>
             <div><kbd>Tab</kbd> <span data-i18n="ctl.inventory"></span></div><div><kbd>K</kbd> <span data-i18n="ctl.craft"></span></div>
             <div><kbd>M</kbd> <span data-i18n="ctl.map"></span></div><div><kbd>Esc</kbd> <span data-i18n="ctl.pause"></span></div>
@@ -169,12 +172,14 @@
             <button data-tab="craft" class="tab" type="button" data-i18n="tab.craft"></button>
             <button data-tab="journal" class="tab" type="button" data-i18n="tab.journal"></button>
             <button data-tab="skills" class="tab" type="button"><span data-i18n="tab.skills"></span> <span id="sp-badge"></span></button>
+            <button data-tab="trade" class="tab hidden" type="button" data-i18n="tab.trade"></button>
             <button id="btn-close-panel" class="tab close" type="button" data-i18n-aria="tab.close">✕</button>
           </nav>
           <div class="tab-body" id="tab-inv"></div>
           <div class="tab-body hidden" id="tab-craft"></div>
           <div class="tab-body hidden" id="tab-journal"></div>
           <div class="tab-body hidden" id="tab-skills"></div>
+          <div class="tab-body hidden" id="tab-trade"></div>
         </div>
       </section>
 

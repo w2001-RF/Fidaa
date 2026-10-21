@@ -6,7 +6,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { MaterialLibrary } from '../assets/Materials';
 import { Enemy, type EnemyContext, type ShotRequest } from '../entities/Enemy';
 import { Npc } from '../entities/Npc';
-import { Player, TUNING, type Skill } from '../entities/Player';
+import { Player, type Skill } from '../entities/Player';
 import { AudioSystem } from '../systems/Audio';
 import { CameraRig } from '../systems/CameraRig';
 import { Vfx } from '../systems/Vfx';
@@ -19,27 +19,24 @@ import { Sky } from '../world/Sky';
 import { Vegetation } from '../world/Vegetation';
 import { World } from '../world/World';
 import { zone } from '../world/layout';
-import { MISSIONS, QuestSystem } from './Quests';
+import { lang, onLangChange, setLang, t, tr, trAlt, type Lang } from '../i18n';
+import { ITEMS, RECIPES, SKILL_MAX, WEAPONS, WEAPON_ORDER, emptyInventory, type Recipe, type WeaponId } from './Items';
+import { AMBIENT_LINES, MISSIONS, QuestSystem, type Line } from './Quests';
 import type { Interactable, ItemId, LootBundle } from './types';
 
 type GameState = 'title' | 'playing' | 'paused' | 'dialogue' | 'panel' | 'map' | 'dead' | 'victory';
 
-const AMBIENT_LINES: Record<string, string[]> = {
-  zahra: ['Eat when you can, drink when you can. The land is generous only to those who prepare.', 'Night is our friend, Driss. Their lanterns only light their own faces.'],
-  lahcen: ['A cartridge fired is a garrison awake. Use the khanjar when you can.', 'Rest on the mat in my house if you need the night to come faster.'],
-  v1: ['The Caïd took half my barley "for the war effort". Which war, I ask you?'],
-  v2: ['My son reads the Manifesto to the children at night. Allah protect him.'],
-  v3: ['Sheep do not ask for papers. Lucky sheep.'],
-};
-
 const LIGHT_POOL = 5;
+/** Map fog-of-war grid over the ±250 m map extent. */
+const FOG_N = 96;
+const FOG_EXTENT = 250;
 
 export class Game {
   private readonly renderer: THREE.WebGLRenderer;
   private readonly pipeline: RenderPipeline;
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(58, 1, 0.1, 2600);
-  private readonly lib = new MaterialLibrary();
+  private readonly lib: MaterialLibrary;
   private readonly world: World;
   private readonly sky: Sky;
   private readonly veg: Vegetation;
@@ -69,7 +66,7 @@ export class Game {
   private interactTarget: Interactable | null = null;
   private interactProgress = 0;
   private readonly usedInteractables = new Set<string>();
-  private dialogueLines: [string, string][] = [];
+  private dialogueLines: Line[] = [];
   private dialogueIdx = 0;
   private dialogueNpc = '';
   private dialogueQuest = false;
@@ -86,26 +83,35 @@ export class Game {
   private daysPassed = 0;
   private lastHour = 16.5;
   private panelTab = 'inv';
+  /** Landmark and zone ids the player has found. */
+  private readonly discovered = new Set<string>();
+  readonly fog = new Uint8Array(FOG_N * FOG_N);
+  private exploreT = 0;
+  private autoFireT = 0;
 
   private readonly tmpA = new THREE.Vector3();
   private readonly tmpB = new THREE.Vector3();
   private readonly tmpC = new THREE.Vector3();
   private readonly ctx: EnemyContext;
 
-  constructor(private readonly canvas: HTMLCanvasElement) {
+  constructor(
+    private readonly canvas: HTMLCanvasElement,
+    parts: { lib: MaterialLibrary; world: World; veg: Vegetation; nav: NavGrid },
+  ) {
+    this.lib = parts.lib;
     this.renderer = createRenderer(canvas);
     this.pipeline = new RenderPipeline(this.renderer, this.scene, this.camera);
     this.input = new Input(canvas);
     this.camRig = new CameraRig(this.camera);
 
     // world
-    this.world = new World(this.lib);
+    this.world = parts.world;
     this.scene.add(this.world.group);
     this.sky = new Sky(this.scene);
     this.sky.setHour(this.hourAtStart);
-    this.veg = new Vegetation(this.world.terrain, this.world.collision);
+    this.veg = parts.veg;
     this.scene.add(this.veg.group);
-    this.nav = new NavGrid(this.world.terrain, this.world.collision);
+    this.nav = parts.nav;
     this.scene.add(this.vfx.group);
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
@@ -136,7 +142,7 @@ export class Game {
     }
     // body interactables (enabled on death)
     for (const e of this.enemies) {
-      this.world.interactables.push({ id: `body-${e.spawn.id}`, kind: 'body', pos: e.pos, radius: 1.9, prompt: `Search the ${e.label}`, hold: 0.8, enabled: false, ref: e.spawn.id });
+      this.world.interactables.push({ id: `body-${e.spawn.id}`, kind: 'body', pos: e.pos, radius: 1.9, prompt: { en: `Search the ${e.label.en}`, ar: `فتّش ${e.label.ar}` }, hold: 0.8, enabled: false, ref: e.spawn.id });
     }
 
     this.carryCrate = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.42, 0.32), new THREE.MeshStandardMaterial({ color: '#4f5a35', roughness: 0.8 }));
@@ -163,6 +169,9 @@ export class Game {
     };
 
     this.respawnPlayer(true);
+    // the douar is home: known from the start
+    this.revealFog(this.world.hideout.x, this.world.hideout.z, 70);
+    this.audio.voiceLang = lang();
     this.bindUi();
     this.loop = new Loop(
       (dt, t) => this.update(dt, t),
@@ -176,6 +185,12 @@ export class Game {
 
   start(): void {
     this.loop.start();
+  }
+
+  /** Compile every material once so the first frames of play do not hitch. */
+  warmUp(): void {
+    this.renderer.compile(this.scene, this.camera);
+    this.pipeline.render();
   }
 
   dispose(): void {
@@ -206,10 +221,29 @@ export class Game {
     on('#btn-close-panel', () => this.closeOverlay());
     on('#btn-mute', () => {
       this.audio.setMuted(!this.audio.muted);
-      const b = document.querySelector('#btn-mute');
-      if (b) b.textContent = `Sound: ${this.audio.muted ? 'off' : 'on'}`;
+      this.refreshMuteLabel();
     });
+    document.querySelectorAll<HTMLButtonElement>('[data-lang]').forEach((b) =>
+      b.addEventListener('click', () => {
+        this.audio.ui();
+        setLang(b.dataset.lang as Lang);
+      }),
+    );
+    document.querySelectorAll<HTMLButtonElement>('.btn-fullscreen').forEach((b) => b.addEventListener('click', () => this.toggleFullscreen()));
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Enter' && e.altKey) {
+        e.preventDefault();
+        this.toggleFullscreen();
+      }
+    });
+    document.addEventListener('fullscreenchange', () => this.refreshFullscreenLabel());
+    onLangChange(() => this.onLanguageChanged());
     document.querySelector<HTMLInputElement>('#vol')?.addEventListener('input', (e) => this.audio.setVolume(Number((e.target as HTMLInputElement).value)));
+    document.querySelector<HTMLInputElement>('#music-vol')?.addEventListener('input', (e) => this.audio.setMusicVolume(Number((e.target as HTMLInputElement).value)));
+    document.querySelector<HTMLInputElement>('#voices')?.addEventListener('change', (e) => {
+      this.audio.voice.enabled = (e.target as HTMLInputElement).checked;
+      if (!this.audio.voice.enabled) this.audio.stopVoice();
+    });
     document.querySelector<HTMLInputElement>('#sens')?.addEventListener('input', (e) => {
       this.camRig.sensitivity = Number((e.target as HTMLInputElement).value);
     });
@@ -232,14 +266,56 @@ export class Game {
     });
   }
 
+  private refreshMuteLabel(): void {
+    const b = document.querySelector('#btn-mute');
+    if (b) b.textContent = t(this.audio.muted ? 'pause.soundOff' : 'pause.soundOn');
+  }
+
+  private refreshFullscreenLabel(): void {
+    const on = Boolean(document.fullscreenElement);
+    document.querySelectorAll<HTMLElement>('.btn-fullscreen').forEach((b) => {
+      b.textContent = t(on ? 'ui.fullscreenExit' : 'ui.fullscreen');
+      b.classList.toggle('on', on);
+    });
+  }
+
+  private toggleFullscreen(): void {
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => undefined);
+      return;
+    }
+    const el = document.documentElement;
+    const req = el.requestFullscreen?.({ navigationUI: 'hide' });
+    void req?.then(() => {
+      // pointer lock is dropped by some browsers on the fullscreen transition
+      if (this.state === 'playing') this.input.requestLock();
+    }).catch(() => undefined);
+  }
+
+  /** Re-render everything that holds translated text. */
+  private onLanguageChanged(): void {
+    this.refreshMuteLabel();
+    this.refreshFullscreenLabel();
+    this.audio.voiceLang = lang();
+    if (this.state === 'panel') this.renderPanel();
+    if (this.state === 'map') this.drawMap();
+    if (this.state === 'dialogue') this.showDialogueLine(false);
+    if (this.state === 'dead') this.fillDeathText();
+    if (this.state === 'victory') this.fillVictoryStats();
+    this.map.setLang();
+    if (this.interactTarget) this.hud.setPrompt(tr(this.interactTarget.prompt), this.interactProgress);
+  }
+
   private beginPlay(): void {
     document.querySelector('#title-screen')?.classList.add('hidden');
     this.state = 'playing';
     this.hud.show(true);
     this.input.requestLock();
     void this.audio.unlock();
-    this.hud.showBanner('Douar Tifawt · 1945', 'Bread and Water', 'الخبز والماء');
-    this.hud.toast('Talk to Lalla Zahra in the douar.', 'good');
+    const m = this.quests.current;
+    if (m) this.hud.showBanner(t('banner.start'), tr(m.title), trAlt(m.title));
+    this.hud.toast(t('msg.start'), 'good');
+    this.audio.startMusic();
   }
 
   private pause(): void {
@@ -278,14 +354,22 @@ export class Game {
 
   private renderPanel(): void {
     document.querySelectorAll<HTMLButtonElement>('.tab[data-tab]').forEach((b) => b.classList.toggle('active', b.dataset.tab === this.panelTab));
-    for (const t of ['inv', 'journal', 'skills']) document.querySelector(`#tab-${t}`)?.classList.toggle('hidden', t !== this.panelTab);
+    for (const tab of ['inv', 'craft', 'journal', 'skills']) document.querySelector(`#tab-${tab}`)?.classList.toggle('hidden', tab !== this.panelTab);
     this.hud.renderInventory(this.player.inventory, (id) => {
       this.useItem(id);
       this.renderPanel();
-    }, { kills: this.stats.kills, takedowns: this.stats.takedowns, days: this.daysPassed + 1 });
-    this.hud.renderJournal(MISSIONS, this.quests.mission);
+    }, { kills: this.stats.kills, takedowns: this.stats.takedowns, days: this.daysPassed + 1 }, [...this.player.owned], [...this.player.upgrades]);
+    this.hud.renderCraft(
+      RECIPES.map((r) => ({ r, ...this.craftState(r) })),
+      (r) => {
+        this.craft(r);
+        this.renderPanel();
+      },
+      this.nearBench(),
+    );
+    this.hud.renderJournal(MISSIONS, this.quests.mission, this.world.landmarks.map((l) => ({ name: l.name, found: this.discovered.has(l.id) })));
     this.hud.renderSkills(this.player.skills, this.player.skillPoints, (s: Skill) => {
-      if (this.player.skillPoints <= 0 || this.player.skills[s] >= 3) return;
+      if (this.player.skillPoints <= 0 || this.player.skills[s] >= SKILL_MAX) return;
       this.player.skillPoints -= 1;
       this.player.skills[s] += 1;
       if (s === 'endurance') this.player.health += 15;
@@ -297,7 +381,8 @@ export class Game {
   private drawMap(): void {
     const obj = this.objectiveTarget();
     const foes = this.enemies.filter((e) => e.alive && e.state === 'alert').map((e) => ({ x: e.pos.x, z: e.pos.z }));
-    this.map.draw({ x: this.player.pos.x, z: this.player.pos.z, yaw: this.player.yaw }, obj ? { x: obj.x, z: obj.z } : null, this.world.hideout, foes);
+    const marks = this.world.landmarks.filter((l) => this.discovered.has(l.id)).map((l) => ({ x: l.x, z: l.z, name: l.name }));
+    this.map.draw({ x: this.player.pos.x, z: this.player.pos.z, yaw: this.player.yaw }, obj ? { x: obj.x, z: obj.z } : null, this.world.hideout, foes, this.fog, FOG_N, marks);
   }
 
   // ================================================================ main loop
@@ -372,6 +457,7 @@ export class Game {
       }
       this.updateQuestsAmbient();
       this.updateAlertLevel();
+      this.updateExploration(sim);
     }
 
     // ---- camera, sky, lights, effects
@@ -416,8 +502,8 @@ export class Game {
       return false;
     }
     if (this.state === 'playing') {
-      if (i.wasPressed('inventory') || i.wasPressed('journal')) {
-        this.panelTab = i.wasPressed('journal') ? 'journal' : 'inv';
+      if (i.wasPressed('inventory') || i.wasPressed('journal') || i.wasPressed('craft')) {
+        this.panelTab = i.wasPressed('journal') ? 'journal' : i.wasPressed('craft') ? 'craft' : 'inv';
         this.openOverlay('panel');
       } else if (i.wasPressed('map')) this.openOverlay('map');
       else if (i.wasPressed('pause')) {
@@ -425,7 +511,7 @@ export class Game {
         this.pause();
       }
     } else if (this.state === 'panel') {
-      if (i.wasPressed('inventory') || i.wasPressed('pause') || i.wasPressed('journal')) this.closeOverlay();
+      if (i.wasPressed('inventory') || i.wasPressed('pause') || i.wasPressed('journal') || i.wasPressed('craft')) this.closeOverlay();
     } else if (this.state === 'map') {
       if (i.wasPressed('map') || i.wasPressed('pause')) this.closeOverlay();
     } else if (this.state === 'paused') {
@@ -440,16 +526,24 @@ export class Game {
     const p = this.player;
     const i = this.input;
     if (p.dead) return;
-    if (i.wasPressed('weapon1') || (i.wheel !== 0 && p.weapon === 'rifle')) {
-      if (p.weapon !== 'blade') p.setWeapon('blade');
-    } else if (i.wasPressed('weapon2') || (i.wheel !== 0 && p.weapon === 'blade')) {
-      if (p.weapon !== 'rifle') p.setWeapon('rifle');
+    const slotKeys = ['weapon1', 'weapon2', 'weapon3', 'weapon4', 'weapon5'] as const;
+    slotKeys.forEach((k, idx) => {
+      if (!i.wasPressed(k)) return;
+      const w = WEAPON_ORDER[idx];
+      if (p.owned.has(w)) p.setWeapon(w);
+      else this.hud.toast(t('msg.noWeapon', { w: tr(WEAPONS[w].name) }), 'bad');
+    });
+    if (i.wheel !== 0) {
+      const owned = WEAPON_ORDER.filter((w) => p.owned.has(w));
+      const at = owned.indexOf(p.weapon);
+      p.setWeapon(owned[(at + (i.wheel > 0 ? 1 : -1) + owned.length) % owned.length]);
     }
     if (i.wasPressed('drink')) this.useItem('water');
     if (i.wasPressed('eat')) this.useItem(p.inventory.bread > 0 ? 'bread' : 'dates');
-    if (i.wasPressed('heal')) this.useItem('herbs');
+    if (i.wasPressed('heal')) this.useItem(p.inventory.bandage > 0 && p.health < p.maxHealth - 30 ? 'bandage' : 'herbs');
 
-    if (p.weapon === 'rifle' && i.wasPressed('reload') && p.reloadT < 0 && p.clip < TUNING.clipSize && p.inventory.ammo > 0) {
+    const gun = p.gun;
+    if (gun && i.wasPressed('reload') && p.reloadT < 0 && p.clip < gun.clip && p.inventory[gun.ammo] > 0) {
       p.reloadT = 0;
       this.audio.reload();
     }
@@ -461,7 +555,10 @@ export class Game {
       return;
     }
 
-    if (i.wasPressed('attack')) {
+    // automatic weapons keep firing while the trigger is held
+    this.autoFireT -= dt;
+    const autoHeld = Boolean(gun?.auto) && i.isHeld('attack') && p.clip > 0 && p.reloadT < 0 && p.fireCooldown <= 0;
+    if (i.wasPressed('attack') || autoHeld) {
       if (p.weapon === 'blade') {
         if (p.meleeT < 0 && p.stamina >= 10) {
           p.meleeT = 0;
@@ -475,8 +572,8 @@ export class Game {
           if (p.inventory.ammo > 0) {
             p.reloadT = 0;
             this.audio.reload();
-          } else this.hud.toast('No cartridges left', 'bad');
-        } else this.fireRifle();
+          } else this.hud.toast(t('msg.noAmmo'), 'bad');
+        } else this.fireGun();
       }
     }
 
@@ -484,7 +581,6 @@ export class Game {
       p.meleeHitDone = true;
       this.resolveMelee();
     }
-    void dt;
   }
 
   private takedownCandidate(): Enemy | null {
@@ -529,7 +625,7 @@ export class Game {
       const d = Math.hypot(dx, dz);
       if (d > 2.1 || (dx * fx + dz * fz) / (d || 1) < 0.35) continue;
       const unaware = e.state !== 'alert';
-      const dmg = unaware ? 110 : 36;
+      const dmg = (unaware ? 110 : 36) * (p.upgrades.has('sharpBlade') ? 1.6 : 1);
       const killed = e.takeHit(dmg, p.pos);
       this.audio.hit(true);
       this.vfx.impact(this.tmpA.set(e.pos.x, e.pos.y + 1.25, e.pos.z), 'blood', 5);
@@ -547,68 +643,77 @@ export class Game {
     this.hitstopT = Math.max(this.hitstopT, s);
   }
 
-  private fireRifle(): void {
+  private fireGun(): void {
     const p = this.player;
+    const gun = p.gun;
+    if (!gun) return;
     p.clip -= 1;
-    p.fireCooldown = TUNING.fireInterval;
+    p.fireCooldown = gun.interval;
     this.stats.shots += 1;
     const origin = this.camera.position.clone();
-    const dir = this.camRig.forward(new THREE.Vector3());
-    // spread: tight when aimed and still
-    let spread = p.aiming ? 0.006 : 0.045;
-    spread += Math.min(1, p.moveSpeed / 4) * 0.03;
-    spread *= 1 - p.skills.marksman * 0.2;
-    dir.x += (this.rng() - 0.5) * spread;
-    dir.y += (this.rng() - 0.5) * spread;
-    dir.z += (this.rng() - 0.5) * spread;
-    dir.normalize();
+    const aimDir = this.camRig.forward(new THREE.Vector3());
     // start the ray at the player's shoulder plane so walls behind the camera don't block
-    const toPlayer = this.tmpA.copy(p.pos).setY(p.pos.y + 1.4).sub(origin).dot(dir);
-    origin.addScaledVector(dir, Math.max(0, toPlayer));
-    const range = 220;
-    const end = this.tmpB.copy(origin).addScaledVector(dir, range);
-
-    let hitT = range;
-    let hitEnemy: Enemy | null = null;
-    let head = false;
-    for (const e of this.enemies) {
-      const h = e.hitTest(origin, dir, range);
-      if (h && h.t < hitT) {
-        hitT = h.t;
-        hitEnemy = e;
-        head = h.head;
-      }
-    }
-    const tw = this.world.collision.raycast(origin, end, false);
-    if (tw >= 0 && tw * range < hitT) {
-      hitT = tw * range;
-      hitEnemy = null;
-    }
-    const tt = this.world.terrain.raycastSegment(origin, end, 1);
-    if (tt >= 0 && tt * range < hitT) {
-      hitT = tt * range;
-      hitEnemy = null;
-    }
-    const hitPoint = origin.clone().addScaledVector(dir, hitT);
+    const toPlayer = this.tmpA.copy(p.pos).setY(p.pos.y + 1.4).sub(origin).dot(aimDir);
+    origin.addScaledVector(aimDir, Math.max(0, toPlayer));
+    // spread: tight when aimed and still, worse while moving, better with Marksman
+    let spread = p.aiming ? gun.spreadAim : gun.spreadHip;
+    spread += Math.min(1, p.moveSpeed / 4) * 0.03;
+    spread *= 1 - p.skills.marksman * 0.12;
     const muzzle = p.rig.muzzleWorld(new THREE.Vector3());
-    this.vfx.muzzle(muzzle, dir);
-    this.vfx.tracer(muzzle, hitPoint);
-    this.audio.rifleShot(0, 0);
-    this.camRig.addTrauma(0.28);
-    this.camRig.punchFov(3);
-    if (hitEnemy) {
-      const dmg = (head ? 200 : 72) * (1 + p.skills.marksman * 0.15);
-      const killed = hitEnemy.takeHit(dmg, p.pos);
-      this.vfx.impact(hitPoint, 'blood', 6);
-      this.hud.hitMarker(killed);
-      if (killed) {
-        this.onKill(hitEnemy, false, head);
+    this.vfx.muzzle(muzzle, aimDir);
+    const hits = new Map<Enemy, { dmg: number; head: boolean }>();
+    for (let k = 0; k < gun.pellets; k += 1) {
+      const dir = aimDir.clone();
+      dir.x += (this.rng() - 0.5) * spread;
+      dir.y += (this.rng() - 0.5) * spread;
+      dir.z += (this.rng() - 0.5) * spread;
+      dir.normalize();
+      const range = gun.range;
+      const end = this.tmpB.copy(origin).addScaledVector(dir, range);
+      let hitT = range;
+      let hitEnemy: Enemy | null = null;
+      let head = false;
+      for (const e of this.enemies) {
+        const h = e.hitTest(origin, dir, range);
+        if (h && h.t < hitT) {
+          hitT = h.t;
+          hitEnemy = e;
+          head = h.head;
+        }
       }
-    } else if (hitT < range) {
-      this.vfx.impact(hitPoint, 'dust', 7);
+      const tw = this.world.collision.raycast(origin, end, false);
+      if (tw >= 0 && tw * range < hitT) {
+        hitT = tw * range;
+        hitEnemy = null;
+      }
+      const tt = this.world.terrain.raycastSegment(origin, end, 1);
+      if (tt >= 0 && tt * range < hitT) {
+        hitT = tt * range;
+        hitEnemy = null;
+      }
+      const hitPoint = origin.clone().addScaledVector(dir, hitT);
+      if (k < 3) this.vfx.tracer(muzzle, hitPoint);
+      if (hitEnemy) {
+        // damage falls off past half range
+        const fall = clamp(1.4 - hitT / range, 0.45, 1);
+        const dmg = gun.damage * (head ? gun.headMul : 1) * fall * (1 + p.skills.marksman * 0.12);
+        const prev = hits.get(hitEnemy);
+        hits.set(hitEnemy, { dmg: (prev?.dmg ?? 0) + dmg, head: Boolean(prev?.head) || head });
+        this.vfx.impact(hitPoint, 'blood', gun.pellets > 1 ? 3 : 6);
+      } else if (hitT < range) {
+        this.vfx.impact(hitPoint, 'dust', gun.pellets > 1 ? 3 : 7);
+      }
     }
+    for (const [e, h] of hits) {
+      const killed = e.takeHit(h.dmg, p.pos);
+      this.hud.hitMarker(killed);
+      if (killed) this.onKill(e, false, h.head);
+    }
+    this.audio.gunShot(p.weapon);
+    this.camRig.addTrauma(gun.trauma);
+    this.camRig.punchFov(gun.fov);
     // gunshots carry
-    this.broadcastNoise(p.pos, 80, true);
+    this.broadcastNoise(p.pos, gun.noise, true);
   }
 
   private onKill(e: Enemy, silent: boolean, head = false): void {
@@ -616,7 +721,8 @@ export class Game {
     let xp = e.isOfficer ? 40 : 18;
     if (silent) xp += 15;
     if (head) xp += 8;
-    this.giveXp(xp, silent ? `Silent takedown · ${e.label}` : head ? `Headshot · ${e.label}` : `${e.label} down`);
+    const who = tr(e.label);
+    this.giveXp(xp, silent ? t('msg.takedown', { who }) : head ? t('xp.headshot', { who }) : t('xp.down', { who }));
     if (!silent) {
       // allies nearby notice the body / scream
       for (const o of this.enemies) if (o !== e && o.alive && o.pos.distanceTo(e.pos) < 18) o.hearNoise(e.pos, 18, false);
@@ -629,7 +735,19 @@ export class Game {
     if (it) {
       it.enabled = true;
       it.pos = e.pos;
-      it.loot = { ammo: e.spawn.faction === 'french' ? 3 + Math.floor(this.rng() * 3) : 2 + Math.floor(this.rng() * 2), ...(this.rng() < 0.3 ? { bread: 1 } : {}), ...(this.rng() < 0.25 ? { dates: 1 } : {}) };
+      const french = e.spawn.faction === 'french';
+      const r = this.rng;
+      it.loot = {
+        ammo: french ? 3 + Math.floor(r() * 3) : 2 + Math.floor(r() * 2),
+        ...(r() < 0.3 ? { bread: 1 } : {}),
+        ...(r() < 0.25 ? { dates: 1 } : {}),
+        ...(r() < (french ? 0.55 : 0.3) ? { powder: 1 } : {}),
+        ...(r() < 0.4 ? { scrap: 1 } : {}),
+        ...(!french && r() < 0.55 ? { cloth: 1 } : {}),
+        ...(e.isOfficer ? { pistolAmmo: 6 + Math.floor(r() * 6) } : {}),
+        ...(french && r() < 0.15 ? { bandage: 1 } : {}),
+      };
+      it.weapon = e.isOfficer && !this.player.owned.has('pistol') ? 'pistol' : undefined;
       if (e.spawn.carries === 'key' && this.player.inventory.key <= 0 && !this.prisonOpened) it.loot.key = 1;
     }
   }
@@ -651,7 +769,8 @@ export class Game {
       }
     }
     this.audio.whistle(e.pos.distanceTo(this.player.pos));
-    if (this.alertLevel !== 'hunted') this.hud.toast(`Spotted by a ${e.label}!${shouted ? ' The alarm spreads.' : ''}`, 'bad');
+    if (this.alertLevel !== 'hunted') this.hud.toast(t('msg.spotted', { who: tr(e.label) }) + (shouted ? t('msg.alarm') : ''), 'bad');
+    this.audio.bark(e.spawn.faction, e.isOfficer, this.camera.position.distanceTo(e.pos));
   }
 
   private onEnemyShot(req: ShotRequest): void {
@@ -672,7 +791,7 @@ export class Game {
       return;
     }
     if (this.rng() < req.hitChance) {
-      p.damage(req.damage * (0.85 + this.rng() * 0.3), `shot by a ${req.enemy.label}`, this.gameTime);
+      p.damage(req.damage * (0.85 + this.rng() * 0.3), { kind: 'shot', by: req.enemy.label }, this.gameTime);
       this.vfx.tracer(req.from, chest);
       this.vfx.impact(chest, 'blood', 5);
       this.audio.hurt();
@@ -691,7 +810,7 @@ export class Game {
 
   private onEnemyMelee(e: Enemy): void {
     if (e.pos.distanceTo(this.player.pos) > 2.4 || this.player.dead) return;
-    this.player.damage(13, `struck down by a ${e.label}`, this.gameTime);
+    this.player.damage(13, { kind: 'melee', by: e.label }, this.gameTime);
     this.audio.hit(true);
     this.audio.hurt();
     this.camRig.addTrauma(0.35);
@@ -719,7 +838,7 @@ export class Game {
     // takedown prompt wins
     const victim = this.takedownCandidate();
     if (victim) {
-      this.hud.setPrompt(`Silent takedown · ${victim.label}`, 0, true);
+      this.hud.setPrompt(t('msg.takedown', { who: tr(victim.label) }), 0, true);
       this.interactTarget = null;
       return;
     }
@@ -760,7 +879,7 @@ export class Game {
       this.interactProgress = Math.max(0, this.interactProgress - dt * 2);
       p.interactT = 0;
     }
-    if (this.interactTarget) this.hud.setPrompt(this.interactTarget.prompt, this.interactProgress);
+    if (this.interactTarget) this.hud.setPrompt(tr(this.interactTarget.prompt), this.interactProgress);
   }
 
   private perform(it: Interactable): void {
@@ -768,14 +887,14 @@ export class Game {
     switch (it.kind) {
       case 'water':
         p.thirst = 100;
-        p.inventory.water = TUNING.waterCharges;
+        p.inventory.water = p.waterCharges;
         this.audio.drink();
-        this.hud.toast('You drink deeply and fill your guerba (4 sips).', 'good');
+        this.hud.toast(t('msg.drink', { n: p.waterCharges }), 'good');
         this.questEvent(`water:${it.id}`);
         break;
       case 'oven':
         if ((it.cooldownUntil ?? 0) > this.gameTime) {
-          this.hud.toast('The next loaves are still baking.', '');
+          this.hud.toast(t('msg.baking'), '');
           break;
         }
         it.cooldownUntil = this.gameTime + 120;
@@ -788,15 +907,16 @@ export class Game {
         break;
       case 'loot':
       case 'body': {
-        const loot = it.loot ?? {};
+        const loot = this.scavenge(it.loot ?? {});
         it.enabled = false;
-        if (Object.keys(loot).length === 0) this.hud.toast('Nothing of use.', '');
+        if (Object.keys(loot).length === 0) this.hud.toast(t('msg.nothing'), '');
         this.addItems(loot);
+        if (it.weapon) this.grantWeapon(it.weapon);
         this.vfx.glint(this.tmpA.copy(it.pos).setY(it.pos.y + 0.6));
         this.audio.pickup();
         if (loot.key) {
           this.questEvent('key');
-          this.hud.toast('You take the prison key from the Khalifa.', 'good');
+          this.hud.toast(t('msg.key'), 'good');
         }
         if (it.kind === 'body') {
           const e = this.enemies.find((x) => x.spawn.id === it.ref);
@@ -805,21 +925,38 @@ export class Game {
         break;
       }
       case 'herb':
+      case 'wood':
+      case 'scrap': {
         it.enabled = false;
         window.setTimeout(() => (it.enabled = true), 300000);
-        this.addItems({ herbs: 1 });
+        const base: LootBundle = it.kind === 'herb' ? { herbs: 1 } : it.kind === 'wood' ? { wood: 2 } : { scrap: 2, ...(this.rng() < 0.3 ? { powder: 1 } : {}) };
+        this.addItems(this.scavenge(base));
         this.audio.pickup();
+        break;
+      }
+      case 'weapon': {
+        this.usedInteractables.add(it.id);
+        it.enabled = false;
+        if (it.weapon) this.grantWeapon(it.weapon);
+        if (it.loot) this.addItems(it.loot);
+        this.audio.clank();
+        this.broadcastNoise(p.pos, 8, false);
+        break;
+      }
+      case 'bench':
+        this.panelTab = 'craft';
+        this.openOverlay('panel');
         break;
       case 'leaflet':
         if (p.inventory.leaflet <= 0) {
-          this.hud.toast('You have no leaflets left. See Si Lahcen.', 'bad');
+          this.hud.toast(t('msg.noLeaflets'), 'bad');
           break;
         }
         p.inventory.leaflet -= 1;
         this.usedInteractables.add(it.id);
         this.world.postLeaflet(it.id);
         this.audio.pickup();
-        this.giveXp(15, 'Leaflet pasted');
+        this.giveXp(15, t('xp.leaflet'));
         this.questEvent('leaflet');
         break;
       case 'pole':
@@ -827,13 +964,14 @@ export class Game {
         this.world.cutPole(Number(it.ref));
         this.audio.snapWire();
         this.vfx.impact(this.tmpA.copy(it.pos).setY(it.pos.y + 6.9), 'spark', 14);
-        this.giveXp(15, 'Telegraph line cut');
+        this.giveXp(15, t('xp.pole'));
+        this.addItems({ scrap: 1 });
         this.broadcastNoise(p.pos, 10, false);
         this.questEvent('pole');
         break;
       case 'prison':
         if (p.inventory.key <= 0) {
-          this.hud.toast("Locked tight. The Caïd's Khalifa carries the key.", 'bad');
+          this.hud.toast(t('msg.locked'), 'bad');
           break;
         }
         p.inventory.key = 0;
@@ -845,7 +983,7 @@ export class Game {
           if (n.spawn.outfit !== 'prisoner') continue;
           n.fleeTo(this.nav, this.world.kasbahGate.x - 30, this.world.kasbahGate.z + 30);
         }
-        this.giveXp(30, 'Prisoners freed');
+        this.giveXp(30, t('xp.prison'));
         this.questEvent('prison');
         break;
       case 'cache':
@@ -855,12 +993,12 @@ export class Game {
         this.carryCrate.visible = true;
         this.audio.pickup();
         this.broadcastNoise(p.pos, 9, false);
-        this.hud.toast('You shoulder a crate of rifles. Get back to Douar Tifawt!', 'good');
+        this.hud.toast(t('msg.cache'), 'good');
         this.questEvent('cache');
         break;
       case 'rest': {
         if (this.alertLevel === 'hunted') {
-          this.hud.toast('You cannot rest while they hunt you.', 'bad');
+          this.hud.toast(t('msg.noRest'), 'bad');
           break;
         }
         const h = this.sky.hour;
@@ -875,26 +1013,92 @@ export class Game {
         p.hunger = Math.max(5, p.hunger - delta * 1.6);
         p.thirst = Math.max(5, p.thirst - delta * 2.2);
         this.hud.flash(0.95, '#0b0d18');
-        this.hud.toast(target === 21 ? 'You sleep until nightfall.' : 'You sleep until dawn.', 'good');
+        this.hud.toast(t(target === 21 ? 'msg.sleepNight' : 'msg.sleepDawn'), 'good');
         break;
       }
     }
   }
 
   private addItems(loot: LootBundle): void {
-    const names: Record<ItemId, string> = { bread: 'Bread', dates: 'Dates', herbs: 'Herbs', ammo: 'Cartridges', leaflet: 'Leaflets', key: 'Key', water: 'Water' };
     for (const [k, v] of Object.entries(loot) as [ItemId, number][]) {
       if (!v) continue;
       this.player.inventory[k] += v;
-      this.hud.toast(`+${v} ${names[k]}`, 'good');
+      this.hud.toast(t('msg.item', { n: v, item: tr(ITEMS[k].name) }), 'good');
     }
+  }
+
+  /** Scavenger skill and the smuggler satchel add materials/ammo to every search. */
+  private scavenge(loot: LootBundle): LootBundle {
+    const out: LootBundle = { ...loot };
+    const p = this.player;
+    const bonus: ItemId[] = ['scrap', 'cloth', 'wood', 'powder', 'ammo', 'pistolAmmo'];
+    for (let rank = 0; rank < p.skills.scavenger; rank += 1) {
+      if (this.rng() < 0.3) {
+        const k = bonus[Math.floor(this.rng() * bonus.length)];
+        out[k] = (out[k] ?? 0) + 1;
+      }
+    }
+    if (p.upgrades.has('satchel')) {
+      const k = bonus[Math.floor(this.rng() * 4)];
+      out[k] = (out[k] ?? 0) + 1;
+    }
+    return out;
+  }
+
+  private grantWeapon(w: WeaponId): void {
+    const p = this.player;
+    if (p.owned.has(w)) return;
+    p.owned.add(w);
+    const gun = WEAPONS[w].gun;
+    if (gun) p.clips[w] = gun.clip;
+    this.audio.questComplete();
+    this.hud.showBanner(t('banner.newWeapon'), tr(WEAPONS[w].name), t('banner.weaponHint', { n: WEAPONS[w].slot }), 3000);
+  }
+
+  // ================================================================ crafting
+
+  private nearBench(): boolean {
+    return this.player.pos.distanceTo(this.world.bench) < 5;
+  }
+
+  private craftState(r: Recipe): { can: boolean; reason: string; done: boolean } {
+    const p = this.player;
+    const done = Boolean((r.weapon && p.owned.has(r.weapon)) || (r.upgrade && p.upgrades.has(r.upgrade)));
+    if (done) return { can: false, reason: t('craft.owned'), done };
+    if ((r.artisan ?? 0) > p.skills.artisan) return { can: false, reason: t('craft.needArtisan', { n: r.artisan ?? 0 }), done };
+    if (r.bench && !this.nearBench()) return { can: false, reason: t('craft.needBench'), done };
+    for (const [k, v] of Object.entries(r.cost) as [ItemId, number][]) {
+      if (p.inventory[k] < v) return { can: false, reason: t('craft.missing'), done };
+    }
+    return { can: true, reason: '', done };
+  }
+
+  private craft(r: Recipe): void {
+    if (!this.craftState(r).can) return;
+    const p = this.player;
+    for (const [k, v] of Object.entries(r.cost) as [ItemId, number][]) p.inventory[k] -= v;
+    if (r.gives) {
+      const gives: LootBundle = {};
+      for (const [k, v] of Object.entries(r.gives) as [ItemId, number][]) {
+        gives[k] = v + (ITEMS[k].kind === 'ammo' ? p.skills.artisan : 0);
+      }
+      this.addItems(gives);
+    }
+    if (r.weapon) this.grantWeapon(r.weapon);
+    if (r.upgrade) {
+      p.upgrades.add(r.upgrade);
+      if (r.upgrade === 'bigSkin') p.inventory.water = p.waterCharges;
+    }
+    this.audio.craft();
+    this.hud.toast(t('craft.done', { what: tr(r.name) }), 'good');
+    this.giveXp(r.weapon || r.upgrade ? 20 : 4, t('xp.craft'));
   }
 
   private useItem(id: ItemId): void {
     const p = this.player;
     if (p.dead) return;
     if (id === 'water') {
-      if (p.inventory.water <= 0) return void this.hud.toast('Your guerba is empty. Find a well or fountain.', 'bad');
+      if (p.inventory.water <= 0) return void this.hud.toast(t('msg.emptySkin'), 'bad');
       if (p.thirst > 97) return;
       p.inventory.water -= 1;
       p.thirst = Math.min(100, p.thirst + 35);
@@ -903,27 +1107,35 @@ export class Game {
       if (p.inventory[id] <= 0) {
         const other = id === 'bread' ? 'dates' : 'bread';
         if (p.inventory[other] > 0) return this.useItem(other);
-        return void this.hud.toast('You have nothing to eat.', 'bad');
+        return void this.hud.toast(t('msg.noFood'), 'bad');
       }
       if (p.hunger > 97) return;
       p.inventory[id] -= 1;
-      p.hunger = Math.min(100, p.hunger + (id === 'bread' ? 40 : 18));
+      p.hunger = Math.min(100, p.hunger + (id === 'bread' ? 40 : 18) * (1 + p.skills.survivalist * 0.1));
       if (id === 'dates') p.thirst = Math.min(100, p.thirst + 6);
       this.audio.eat();
     } else if (id === 'herbs') {
-      if (p.inventory.herbs <= 0) return void this.hud.toast('No herbs. Wild thyme grows in the hills.', 'bad');
+      if (p.inventory.herbs <= 0) {
+        if (p.inventory.bandage > 0) return this.useItem('bandage');
+        return void this.hud.toast(t('msg.noHerbs'), 'bad');
+      }
       if (p.health >= p.maxHealth) return;
       p.inventory.herbs -= 1;
       p.healPool += 35;
       this.audio.eat();
+    } else if (id === 'bandage') {
+      if (p.inventory.bandage <= 0 || p.health >= p.maxHealth) return;
+      p.inventory.bandage -= 1;
+      p.health = Math.min(p.maxHealth, p.health + 60);
+      this.audio.bandage();
     }
   }
 
   private giveXp(amount: number, reason: string): void {
-    this.hud.toast(`+${amount} XP · ${reason}`, 'xp');
+    this.hud.toast(t('xp.gain', { n: amount, why: reason }), 'xp');
     if (this.player.gainXp(amount)) {
       this.audio.levelUp();
-      this.hud.showBanner('Level up', `Level ${this.player.level}`, 'Open Tab → Skills to learn a new skill', 2800);
+      this.hud.showBanner(t('banner.levelUp'), t('banner.level', { n: this.player.level }), t('banner.levelHint'), 2800);
     }
   }
 
@@ -936,8 +1148,8 @@ export class Game {
       this.dialogueLines = lines;
       this.dialogueQuest = true;
     } else {
-      const pool = AMBIENT_LINES[npc] ?? ['…'];
-      this.dialogueLines = [[n?.spawn.name ?? '', pool[Math.floor(this.rng() * pool.length)]]];
+      const pool = AMBIENT_LINES[npc] ?? [{ en: '…', ar: '…' }];
+      this.dialogueLines = [[n?.spawn.name ?? { en: '', ar: '' }, pool[Math.floor(this.rng() * pool.length)]]];
       this.dialogueQuest = false;
     }
     this.dialogueNpc = npc;
@@ -948,9 +1160,10 @@ export class Game {
     this.showDialogueLine();
   }
 
-  private showDialogueLine(): void {
+  private showDialogueLine(speak = true): void {
     const [who, text] = this.dialogueLines[this.dialogueIdx];
-    this.hud.showDialogue(who, text);
+    this.hud.showDialogue(tr(who), tr(text));
+    if (speak) this.audio.speak(tr(text), this.dialogueNpc, lang());
     const n = this.npcs.find((x) => x.spawn.id === this.dialogueNpc);
     if (n) n.talking = 30;
   }
@@ -963,6 +1176,7 @@ export class Game {
       return;
     }
     this.hud.hideDialogue();
+    this.audio.stopVoice();
     this.state = 'playing';
     const n = this.npcs.find((x) => x.spawn.id === this.dialogueNpc);
     if (n) n.talking = 0;
@@ -977,16 +1191,16 @@ export class Game {
     // step-entry side effects
     if (before?.id === 'leaflets' && beforeStep === 0 && res.stepDone) {
       this.player.inventory.leaflet = 3;
-      this.hud.toast('+3 Istiqlal leaflets', 'good');
+      this.hud.toast(t('msg.leafletsGot'), 'good');
     }
     if (res.missionDone) {
       const m = res.missionDone;
       this.addItems(m.reward.items);
-      this.giveXp(m.reward.xp, `Mission complete: ${m.title}`);
+      this.giveXp(m.reward.xp, t('xp.mission', { m: tr(m.title) }));
       this.audio.questComplete();
-      this.hud.showBanner('Mission complete', m.title, m.arabic);
+      this.hud.showBanner(t('banner.missionDone'), tr(m.title), trAlt(m.title));
       const next = this.quests.current;
-      if (next) window.setTimeout(() => this.hud.showBanner('New mission', next.title, next.arabic), 3600);
+      if (next) window.setTimeout(() => this.hud.showBanner(t('banner.newMission'), tr(next.title), trAlt(next.title)), 3600);
       if (res.allDone) this.victoryAt = this.elapsed + 3.5;
     } else if (res.stepDone) {
       this.audio.pickup();
@@ -1072,8 +1286,39 @@ export class Game {
       }
       if (e.awareness > 0.3 || e.state === 'search') level = 'suspicious';
     }
-    if (level === 'hidden' && this.alertLevel === 'hunted') this.hud.toast('You have lost them.', 'good');
+    if (level === 'hidden' && this.alertLevel === 'hunted') this.hud.toast(t('msg.lost'), 'good');
     this.alertLevel = level;
+  }
+
+  /** Reveal map fog around the player and discover landmarks/zones. */
+  private updateExploration(dt: number): void {
+    this.exploreT -= dt;
+    if (this.exploreT > 0 || this.state === 'title') return;
+    this.exploreT = 0.5;
+    const p = this.player.pos;
+    this.revealFog(p.x, p.z, 48);
+    for (const l of this.world.landmarks) {
+      if (this.discovered.has(l.id) || Math.hypot(l.x - p.x, l.z - p.z) > l.r) continue;
+      this.discovered.add(l.id);
+      this.revealFog(l.x, l.z, l.reveal);
+      this.audio.discover();
+      this.hud.showBanner(t('banner.discovered'), tr(l.name), trAlt(l.name), 3000);
+      this.giveXp(l.xp, t('xp.discover'));
+    }
+  }
+
+  revealFog(x: number, z: number, r: number): void {
+    const cell = (FOG_EXTENT * 2) / FOG_N;
+    const cx = Math.floor((x + FOG_EXTENT) / cell);
+    const cz = Math.floor((z + FOG_EXTENT) / cell);
+    const rc = Math.ceil(r / cell);
+    for (let j = Math.max(0, cz - rc); j <= Math.min(FOG_N - 1, cz + rc); j += 1) {
+      for (let i = Math.max(0, cx - rc); i <= Math.min(FOG_N - 1, cx + rc); i += 1) {
+        const dx = (i + 0.5) * cell - FOG_EXTENT - x;
+        const dz = (j + 0.5) * cell - FOG_EXTENT - z;
+        if (dx * dx + dz * dz <= r * r) this.fog[j * FOG_N + i] = 1;
+      }
+    }
   }
 
   private updateLights(dt: number): void {
@@ -1117,17 +1362,17 @@ export class Game {
     this.state = 'dead';
     this.input.releaseLock();
     this.audio.death();
-    const cause = this.player.causeOfDeath;
-    document.querySelector('#death-cause')!.textContent =
-      cause === 'Thirst' ? 'The sun took you before the enemy could. You died of thirst.' : cause === 'Hunger' ? 'Your body gave out. You died of hunger.' : `You were ${cause}.`;
-    const hint =
-      cause === 'Thirst' || cause === 'Hunger'
-        ? 'Keep your guerba full (Q to drink) and carry bread (F to eat). Wells, fountains and the oasis never run dry.'
-        : this.sky.night < 0.5
-          ? 'Daylight doubles how far guards can see. Crouch (C) in olive groves and scrub, or rest until night.'
-          : 'Break their line of sight to lose them. Gunshots alert every guard within 80 m; the khanjar is silent.';
-    document.querySelector('#death-hint')!.textContent = hint;
+    this.fillDeathText();
     document.querySelector('#death-screen')?.classList.remove('hidden');
+  }
+
+  private fillDeathText(): void {
+    const cause = this.player.causeOfDeath;
+    const who = cause.by ? tr(cause.by) : '';
+    document.querySelector('#death-cause')!.textContent =
+      cause.kind === 'thirst' ? t('death.thirst') : cause.kind === 'hunger' ? t('death.hunger') : cause.kind === 'melee' ? t('death.melee', { who }) : t('death.shot', { who });
+    const hint = cause.kind === 'thirst' || cause.kind === 'hunger' ? t('death.hintSurvival') : this.sky.night < 0.5 ? t('death.hintDay') : t('death.hintNight');
+    document.querySelector('#death-hint')!.textContent = hint;
   }
 
   private retry(): void {
@@ -1151,9 +1396,24 @@ export class Game {
     this.victoryShown = true;
     this.state = 'victory';
     this.input.releaseLock();
-    const s = document.querySelector('#victory-stats');
-    if (s) s.innerHTML = `<span><b>${this.daysPassed + 1}</b>days survived</span><span><b>${this.stats.kills}</b>enemies fallen</span><span><b>${this.stats.takedowns}</b>silent takedowns</span><span><b>${this.player.level}</b>level</span>`;
+    this.fillVictoryStats();
     document.querySelector('#victory-screen')?.classList.remove('hidden');
+    this.audio.victorySong();
+  }
+
+  private fillVictoryStats(): void {
+    const s = document.querySelector('#victory-stats');
+    if (!s) return;
+    const found = this.world.landmarks.filter((l) => this.discovered.has(l.id)).length;
+    s.innerHTML = [
+      [this.daysPassed + 1, t('victory.days')],
+      [this.stats.kills, t('victory.kills')],
+      [this.stats.takedowns, t('victory.takedowns')],
+      [`${found}/${this.world.landmarks.length}`, t('victory.places')],
+      [this.player.level, t('victory.level')],
+    ]
+      .map(([v, l]) => `<span><b>${v}</b>${l}</span>`)
+      .join('');
   }
 
   // ================================================================ HUD
@@ -1179,20 +1439,22 @@ export class Game {
       level: p.level,
       xpProgress: p.xpProgress(),
       weapon: p.weapon,
+      weaponName: tr(WEAPONS[p.weapon].name),
+      slots: WEAPON_ORDER.map((w) => ({ slot: WEAPONS[w].slot, owned: p.owned.has(w), active: p.weapon === w })),
       clip: p.clip,
-      reserve: p.inventory.ammo,
+      reserve: p.gun ? p.inventory[p.gun.ammo] : 0,
       water: p.inventory.water,
       food: p.inventory.bread + p.inventory.dates,
       herbs: p.inventory.herbs,
       reloading: p.reloadT >= 0,
-      missionTitle: this.quests.current?.title ?? 'Free roam: the struggle continues',
-      objectives: st.map((o) => ({ text: o.obj.text, have: o.have, need: o.need, done: o.done })),
+      missionTitle: this.quests.current ? tr(this.quests.current.title) : t('mission.free'),
+      objectives: st.map((o) => ({ text: tr(o.obj.text), have: o.have, need: o.need, done: o.done })),
       yaw: this.camRig.yaw,
       px: p.pos.x,
       pz: p.pos.z,
       markers,
-      crosshair: this.state === 'playing' && !p.dead && (p.weapon === 'rifle' || p.aiming),
-      spread: p.weapon === 'rifle' ? (p.aiming ? 0.05 : 0.6) + Math.min(1, p.moveSpeed / 4) * 0.4 : 0,
+      crosshair: this.state === 'playing' && !p.dead && (p.weapon !== 'blade' || p.aiming),
+      spread: p.gun ? (p.aiming ? p.gun.spreadAim * 8 : p.gun.spreadHip * 12) + Math.min(1, p.moveSpeed / 4) * 0.4 : 0,
     });
     this.hud.lockHint.classList.toggle('hidden', this.input.locked || this.state !== 'playing');
 
@@ -1258,8 +1520,8 @@ export class Game {
         hideOverlays();
         for (const e of this.enemies) e.reset();
         this.quests.jump(0, 0);
-        this.player.inventory = { bread: 1, dates: 2, herbs: 1, ammo: 12, leaflet: 0, key: 0, water: 3 };
-        this.player.clip = 5;
+        this.player.inventory = { ...emptyInventory(), bread: 1, dates: 2, herbs: 1, ammo: 12, water: 3, cloth: 2, scrap: 2, powder: 1, wood: 1 };
+        this.player.clips.rifle = 5;
         this.state = 'playing';
         const d = zone('douar');
         const m = zone('medina');
@@ -1328,7 +1590,7 @@ export class Game {
           case 'death':
             this.sky.setHour(14);
             setPlayer(post.x - 6, post.z - 50, Math.PI);
-            this.player.damage(999, 'shot by a French soldier', this.gameTime);
+            this.player.damage(999, { kind: 'shot', by: { en: 'French soldier', ar: 'عسكري فرنساوي' } }, this.gameTime);
             this.player.deathT = 3;
             this.showDeath();
             break;
@@ -1373,6 +1635,16 @@ export class Game {
         this.player.pos.set(x, this.world.terrain.getHeight(x, z), z);
         this.camRig.snap();
       },
+      give: (items: Record<string, number>) => {
+        for (const [k, v] of Object.entries(items)) if (k in this.player.inventory) this.player.inventory[k as ItemId] += v;
+      },
+      grantWeapon: (w: string) => this.grantWeapon(w as WeaponId),
+      landmarks: () => this.world.landmarks.map((l) => ({ id: l.id, x: l.x, z: l.z })),
+      setLang: (l: string) => setLang(l as Lang),
+      stress: (n: number) => {
+        // load test: alert every guard near the player and fill the sky with gunfire
+        for (const e of this.enemies) if (e.alive && e.pos.distanceTo(this.player.pos) < n) e.alertFrom(this.player.pos);
+      },
     };
     if (!botHelpers) {
       // player-facing build: keep the inspector contract, drop the cheat-capable bot helpers
@@ -1380,6 +1652,9 @@ export class Game {
       delete h.teleport;
       delete h.setHour;
       delete h.input;
+      delete h.give;
+      delete h.grantWeapon;
+      delete h.stress;
     }
   }
 
@@ -1424,6 +1699,13 @@ export class Game {
         inventory: { ...p.inventory },
         clip: p.clip,
         interact: this.interactTarget?.id ?? null,
+        weapon: p.weapon,
+        weapons: [...p.owned],
+        upgrades: [...p.upgrades],
+        discovered: [...this.discovered],
+        fogRevealed: this.fog.reduce((a, v) => a + v, 0) / this.fog.length,
+        skills: { ...p.skills },
+        lang: lang(),
       },
     };
   }

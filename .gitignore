@@ -9,3 +9,4 @@ artifacts/preview/
 .env.*
 *.log
 .DS_Store
+artifacts/shots/

@@ -1,4 +1,6 @@
 import type * as THREE from 'three';
+import type { Text } from '../i18n';
+import type { WeaponId } from './Items';
 
 export type Faction = 'french' | 'makhzen';
 export type Rank = 'soldier' | 'officer' | 'sentry';
@@ -21,7 +23,7 @@ export type EnemySpawn = {
 
 export type NpcSpawn = {
   id: string;
-  name: string;
+  name: Text;
   outfit: 'zahra' | 'lahcen' | 'villager' | 'villagerF' | 'prisoner';
   x: number;
   z: number;
@@ -42,14 +44,18 @@ export type InteractKind =
   | 'cache'
   | 'rest'
   | 'body'
-  | 'herb';
+  | 'herb'
+  | 'wood'
+  | 'scrap'
+  | 'weapon'
+  | 'bench';
 
 export type Interactable = {
   id: string;
   kind: InteractKind;
   pos: THREE.Vector3;
   radius: number;
-  prompt: string;
+  prompt: Text;
   enabled: boolean;
   /** Seconds the key must be held (0 = instant). */
   hold: number;
@@ -61,8 +67,24 @@ export type Interactable = {
   cooldownUntil?: number;
   /** Quest gating: only enabled while this quest step is active */
   questGate?: string;
+  /** Weapon granted by a 'weapon' pickup */
+  weapon?: WeaponId;
 };
 
-export type ItemId = 'bread' | 'dates' | 'herbs' | 'ammo' | 'leaflet' | 'key' | 'water';
+export type ItemId =
+  | 'bread'
+  | 'dates'
+  | 'herbs'
+  | 'water'
+  | 'bandage'
+  | 'ammo'
+  | 'pistolAmmo'
+  | 'shot'
+  | 'scrap'
+  | 'cloth'
+  | 'wood'
+  | 'powder'
+  | 'leaflet'
+  | 'key';
 
 export type LootBundle = Partial<Record<ItemId, number>>;

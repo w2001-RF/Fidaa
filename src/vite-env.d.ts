@@ -42,6 +42,11 @@ interface ThreeGameTestHooks {
   teleport?(x: number, z: number): void;
   setHour?(h: number): void;
   input?(action: string, down: boolean): void;
+  give?(items: Record<string, number>): void;
+  grantWeapon?(weapon: string): void;
+  landmarks?(): { id: string; x: number; z: number }[];
+  setLang?(lang: string): void;
+  stress?(radius: number): void;
 }
 
 interface Window {

@@ -1,6 +1,7 @@
+import { ITEMS, SKILLS, SKILL_MAX, SKILL_ORDER, UPGRADE_NAMES, WEAPONS, type ItemKind, type Recipe, type Skill, type Upgrade, type WeaponId } from '../game/Items';
 import type { Mission } from '../game/Quests';
 import type { ItemId } from '../game/types';
-import type { Skill } from '../entities/Player';
+import { t, tr, trAlt, type Text } from '../i18n';
 
 export type AlertLevel = 'hidden' | 'suspicious' | 'hunted';
 export type CompassMarker = { x: number; z: number; kind: 'objective' | 'hideout' | 'foe' | 'water' };
@@ -17,7 +18,9 @@ export type HudState = {
   alert: AlertLevel;
   level: number;
   xpProgress: number;
-  weapon: 'blade' | 'rifle';
+  weapon: WeaponId;
+  weaponName: string;
+  slots: { slot: number; owned: boolean; active: boolean }[];
   clip: number;
   reserve: number;
   water: number;
@@ -42,21 +45,7 @@ const $ = <T extends HTMLElement = HTMLElement>(sel: string): T => {
   return el;
 };
 
-const ITEM_INFO: Record<ItemId, { name: string; desc: string; icon: string }> = {
-  bread: { name: 'Khobz (bread)', desc: 'Eat: +40 hunger', icon: 'bread' },
-  dates: { name: 'Dates', desc: 'Eat: +18 hunger, +6 thirst', icon: 'bread' },
-  water: { name: 'Guerba (water skin)', desc: 'Drink: +35 thirst per sip', icon: 'water' },
-  herbs: { name: 'Wild thyme', desc: 'Heals 35 over a few seconds', icon: 'herbs' },
-  ammo: { name: 'Rifle cartridges', desc: '8 mm rounds for the old Lebel', icon: 'ammo' },
-  leaflet: { name: 'Istiqlal leaflets', desc: 'Manifesto tracts to paste in the medina', icon: 'leaflet' },
-  key: { name: 'Prison key', desc: "Taken from the Caïd's Khalifa", icon: 'key' },
-};
-
-export const SKILL_INFO: Record<Skill, { name: string; desc: string }> = {
-  stealth: { name: 'Shadow of the Medina', desc: 'Guards notice you 12% later per rank.' },
-  marksman: { name: 'Mountain Marksman', desc: 'Steadier aim and +15% rifle damage per rank.' },
-  endurance: { name: 'Atlas Endurance', desc: '+15 max health and +20 stamina per rank.' },
-};
+const esc = (v: string) => v.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] ?? c);
 
 export class Hud {
   readonly root = $('#hud');
@@ -84,6 +73,8 @@ export class Hud {
   private readonly ammo = $('#ammo');
   private readonly ammoClip = $('#ammo-clip');
   private readonly ammoReserve = $('#ammo-reserve');
+  private readonly slotsEl = $('#slots');
+  private lastSlotsKey = '';
   private readonly qWater = $('#q-water');
   private readonly qFood = $('#q-food');
   private readonly qHerbs = $('#q-herbs');
@@ -129,19 +120,24 @@ export class Hud {
     this.clockText.textContent = s.clock;
     this.clockIcon.classList.toggle('night', s.night);
     this.alertBadge.className = s.alert === 'hidden' ? '' : s.alert;
-    this.alertText.textContent = s.alert === 'hidden' ? (s.night ? 'Unseen · night' : 'Unseen') : s.alert === 'suspicious' ? 'Suspicious' : 'Hunted';
+    this.alertText.textContent = s.alert === 'hidden' ? t(s.night ? 'alert.unseenNight' : 'alert.unseen') : t(s.alert === 'suspicious' ? 'alert.suspicious' : 'alert.hunted');
     this.levelNum.textContent = String(s.level);
     this.xpFill.style.width = `${s.xpProgress * 100}%`;
 
-    this.weaponIcon.className = s.weapon;
-    this.weaponName.textContent = s.weapon === 'blade' ? 'Khanjar' : s.reloading ? 'Lebel rifle · reloading' : 'Lebel rifle';
-    if (s.weapon === 'rifle') {
+    this.weaponIcon.className = WEAPONS[s.weapon].icon;
+    this.weaponName.textContent = s.reloading ? t('weapon.reloading', { w: s.weaponName }) : s.weaponName;
+    const slotsKey = s.slots.map((x) => `${x.owned ? 1 : 0}${x.active ? 1 : 0}`).join('');
+    if (slotsKey !== this.lastSlotsKey) {
+      this.lastSlotsKey = slotsKey;
+      this.slotsEl.innerHTML = s.slots.map((x) => `<i class="${x.owned ? 'owned' : ''}${x.active ? ' active' : ''}">${x.slot}</i>`).join('');
+    }
+    if (s.weapon !== 'blade') {
       this.ammoClip.textContent = String(s.clip);
       this.ammoReserve.textContent = `/ ${s.reserve}`;
       this.ammo.classList.toggle('low', s.clip === 0);
     } else {
       this.ammoClip.textContent = '∞';
-      this.ammoReserve.textContent = 'silent';
+      this.ammoReserve.textContent = t('weapon.silent');
       this.ammo.classList.remove('low');
     }
     this.qWater.textContent = String(s.water);
@@ -202,7 +198,7 @@ export class Hud {
     const heading = normalize(-s.yaw);
     const fov = Math.PI * 0.9;
     const toX = (bearing: number) => W / 2 + (angDiff(heading, bearing) / (fov / 2)) * (W / 2);
-    const labels: [number, string][] = [[0, 'N'], [Math.PI / 2, 'E'], [Math.PI, 'S'], [Math.PI * 1.5, 'W']];
+    const labels: [number, string][] = [[0, t('compass.n')], [Math.PI / 2, t('compass.e')], [Math.PI, t('compass.s')], [Math.PI * 1.5, t('compass.w')]];
     c.textAlign = 'center';
     for (let deg = 0; deg < 360; deg += 15) {
       const b = (deg * Math.PI) / 180;
@@ -216,7 +212,7 @@ export class Hud {
     for (const [b, l] of labels) {
       const x = toX(b);
       if (x < W * 0.08 || x > W * 0.92) continue;
-      c.fillStyle = l === 'N' ? '#d0553a' : '#f1e8d4';
+      c.fillStyle = b === 0 ? '#d0553a' : '#f1e8d4';
       c.fillText(l, x, 22);
     }
     for (const m of s.markers) {
@@ -233,7 +229,7 @@ export class Hud {
         c.restore();
         c.fillStyle = '#f2c14e';
         c.font = '700 11px "Alegreya Sans", sans-serif';
-        c.fillText(`${Math.round(dist)} m`, x, 50);
+        c.fillText(t('unit.m', { n: Math.round(dist) }), x, 50);
         continue;
       }
       if (m.kind === 'hideout') c.fillStyle = '#2f9a68';
@@ -338,37 +334,89 @@ export class Hud {
 
   // -------------------------------------------------------------- panel
 
-  renderInventory(inv: Record<ItemId, number>, use: (id: ItemId) => void, stats: { kills: number; takedowns: number; days: number }): void {
+  renderInventory(
+    inv: Record<ItemId, number>,
+    use: (id: ItemId) => void,
+    stats: { kills: number; takedowns: number; days: number },
+    weapons: WeaponId[],
+    upgrades: Upgrade[],
+  ): void {
     const body = $('#tab-inv');
-    const grid = document.createElement('div');
-    grid.className = 'inv-grid';
-    (Object.keys(ITEM_INFO) as ItemId[]).forEach((id) => {
-      if ((id === 'leaflet' || id === 'key') && inv[id] <= 0) return;
-      const info = ITEM_INFO[id];
-      const el = document.createElement('div');
-      el.className = `item${inv[id] <= 0 ? ' zero' : ''}`;
-      el.innerHTML = `<span class="qi ${info.icon}"></span><span>${info.name} <b>×${inv[id]}</b></span><small>${info.desc}</small>`;
-      if (id === 'bread' || id === 'dates' || id === 'water' || id === 'herbs') {
-        el.addEventListener('click', () => use(id));
-      }
-      grid.appendChild(el);
-    });
+    const section = (title: string, kinds: ItemKind[]) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'inv-section';
+      const h = document.createElement('h4');
+      h.textContent = title;
+      const grid = document.createElement('div');
+      grid.className = 'inv-grid';
+      (Object.keys(ITEMS) as ItemId[]).forEach((id) => {
+        const info = ITEMS[id];
+        if (!kinds.includes(info.kind)) return;
+        if (info.kind === 'quest' && inv[id] <= 0) return;
+        const el = document.createElement('div');
+        el.className = `item${inv[id] <= 0 ? ' zero' : ''}`;
+        el.innerHTML = `<span class="qi ${info.icon}"></span><span>${esc(tr(info.name))} <b>×${inv[id]}</b></span><small>${esc(tr(info.desc))}</small>`;
+        if (info.kind === 'food' || info.kind === 'medical') el.addEventListener('click', () => use(id));
+        grid.appendChild(el);
+      });
+      wrap.append(h, grid);
+      return wrap;
+    };
+    const gear = document.createElement('div');
+    gear.className = 'inv-section';
+    const gh = document.createElement('h4');
+    gh.textContent = t('inv.gear');
+    const chips = document.createElement('div');
+    chips.className = 'gear-row';
+    chips.innerHTML =
+      weapons.map((w) => `<span class="chip weapon"><kbd>${WEAPONS[w].slot}</kbd>${esc(tr(WEAPONS[w].name))}</span>`).join('') +
+      upgrades.map((u) => `<span class="chip">${esc(tr(UPGRADE_NAMES[u]))}</span>`).join('');
+    gear.append(gh, chips);
     const st = document.createElement('div');
     st.className = 'stats-row';
-    st.innerHTML = `<span>Enemies fallen <b>${stats.kills}</b></span><span>Silent takedowns <b>${stats.takedowns}</b></span><span>Days survived <b>${stats.days}</b></span>`;
-    body.replaceChildren(grid, st);
+    st.innerHTML = `<span>${t('inv.kills')} <b>${stats.kills}</b></span><span>${t('inv.takedowns')} <b>${stats.takedowns}</b></span><span>${t('inv.days')} <b>${stats.days}</b></span>`;
+    body.replaceChildren(gear, section(t('inv.supplies'), ['food', 'medical', 'quest']), section(t('inv.ammo'), ['ammo']), section(t('inv.materials'), ['material']), st);
   }
 
-  renderJournal(missions: Mission[], current: number): void {
+  renderCraft(list: { r: Recipe; can: boolean; reason: string; done: boolean }[], craft: (r: Recipe) => void, atBench: boolean): void {
+    const body = $('#tab-craft');
+    const head = document.createElement('p');
+    head.className = 'craft-intro';
+    head.textContent = t('craft.intro') + (atBench ? ` · ${t('craft.atBench')}` : '');
+    const grid = document.createElement('div');
+    grid.className = 'craft-grid';
+    for (const { r, can, reason, done } of list) {
+      const d = document.createElement('div');
+      d.className = `recipe${can ? ' can' : ''}${done ? ' done' : ''}`;
+      const cost = (Object.entries(r.cost) as [ItemId, number][]).map(([k, v]) => `<span class="cost"><span class="qi ${ITEMS[k].icon}"></span>${v} ${esc(tr(ITEMS[k].name))}</span>`).join('');
+      d.innerHTML = `<h5>${esc(tr(r.name))}${r.bench ? ` <em>${t('craft.bench')}</em>` : ''}</h5><p>${esc(tr(r.desc))}</p><div class="costs">${cost}</div>`;
+      const btn = document.createElement('button');
+      btn.className = 'btn';
+      btn.type = 'button';
+      btn.textContent = can ? t('craft.make') : reason;
+      btn.disabled = !can;
+      btn.addEventListener('click', () => craft(r));
+      d.appendChild(btn);
+      grid.appendChild(d);
+    }
+    body.replaceChildren(head, grid);
+  }
+
+  renderJournal(missions: Mission[], current: number, places: { name: Text; found: boolean }[]): void {
     const body = $('#tab-journal');
-    body.replaceChildren(
-      ...missions.map((m, i) => {
-        const d = document.createElement('div');
-        d.className = `journal-mission ${i < current ? 'done' : i === current ? 'active' : 'locked'}`;
-        d.innerHTML = `<h3>${i < current ? '✓ ' : ''}${m.title} <span>${m.arabic}</span></h3><p>${i <= current ? m.brief : 'The cell will tell you more when the time comes.'}</p>`;
-        return d;
-      }),
-    );
+    const ms = missions.map((m, i) => {
+      const d = document.createElement('div');
+      d.className = `journal-mission ${i < current ? 'done' : i === current ? 'active' : 'locked'}`;
+      d.innerHTML = `<h3>${i < current ? '✓ ' : ''}${esc(tr(m.title))} <span>${esc(trAlt(m.title))}</span></h3><p>${esc(i <= current ? tr(m.brief) : t('journal.locked'))}</p>`;
+      return d;
+    });
+    const pl = document.createElement('div');
+    pl.className = 'journal-places';
+    const found = places.filter((p) => p.found).length;
+    pl.innerHTML = `<h3>${t('journal.places')} <span>${found}/${places.length}</span></h3><ul>${places
+      .map((p) => `<li class="${p.found ? 'found' : ''}">${p.found ? esc(tr(p.name)) : t('journal.unknown')}</li>`)
+      .join('')}</ul>`;
+    body.replaceChildren(...ms, pl);
   }
 
   renderSkills(skills: Record<Skill, number>, points: number, spend: (s: Skill) => void): void {
@@ -376,16 +424,16 @@ export class Hud {
     const body = $('#tab-skills');
     const head = document.createElement('p');
     head.style.cssText = 'margin:0 0 6px;color:var(--muted)';
-    head.textContent = points > 0 ? `You have ${points} skill point${points > 1 ? 's' : ''} to spend.` : 'Earn experience from missions, takedowns and survival to gain skill points.';
+    head.textContent = points > 0 ? t('skills.points', { n: points }) : t('skills.none');
     body.replaceChildren(
       head,
-      ...(Object.keys(SKILL_INFO) as Skill[]).map((k) => {
+      ...SKILL_ORDER.map((k) => {
         const d = document.createElement('div');
         d.className = 'skill';
-        const pips = Array.from({ length: 3 }, (_, i) => `<i class="${i < skills[k] ? 'on' : ''}"></i>`).join('');
-        d.innerHTML = `<h4>${SKILL_INFO[k].name}</h4><button class="btn" type="button">Learn</button><div><p>${SKILL_INFO[k].desc}</p><div class="pips">${pips}</div></div>`;
+        const pips = Array.from({ length: SKILL_MAX }, (_, i) => `<i class="${i < skills[k] ? 'on' : ''}"></i>`).join('');
+        d.innerHTML = `<h4>${esc(tr(SKILLS[k].name))}</h4><button class="btn" type="button">${t('skills.learn')}</button><div><p>${esc(tr(SKILLS[k].desc))}</p><div class="pips">${pips}<small>${t('skills.rank', { n: skills[k], max: SKILL_MAX })}</small></div></div>`;
         const btn = d.querySelector('button') as HTMLButtonElement;
-        btn.disabled = points <= 0 || skills[k] >= 3;
+        btn.disabled = points <= 0 || skills[k] >= SKILL_MAX;
         btn.addEventListener('click', () => spend(k));
         return d;
       }),

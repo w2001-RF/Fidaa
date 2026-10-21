@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { L, type Text } from '../i18n';
 import type { EnemySpawn } from '../game/types';
 import { angleDiff, clamp, dampAngle } from '../utils/noise';
 import type { CollisionWorld } from '../world/Collision';
@@ -98,9 +99,9 @@ export class Enemy {
     return this.spawn.rank === 'officer';
   }
 
-  get label(): string {
-    if (this.spawn.faction === 'french') return this.spawn.rank === 'officer' ? 'French lieutenant' : 'French soldier';
-    return this.spawn.rank === 'officer' ? "Caïd's Khalifa" : 'Mokhazni';
+  get label(): Text {
+    if (this.spawn.faction === 'french') return this.spawn.rank === 'officer' ? L('French lieutenant', 'ليوطنان فرنساوي') : L('French soldier', 'عسكري فرنساوي');
+    return this.spawn.rank === 'officer' ? L("Caïd's Khalifa", 'خليفة القايد') : L('Mokhazni', 'مخزني');
   }
 
   reset(): void {

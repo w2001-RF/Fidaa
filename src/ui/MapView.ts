@@ -1,4 +1,5 @@
 import { ROADS, ZONES, OUED, distToPolyline, zone } from '../world/layout';
+import { lang, tr, type Text } from '../i18n';
 import type { Terrain } from '../world/Terrain';
 
 const EXTENT = 250;
@@ -8,8 +9,11 @@ export class MapView {
   private readonly canvas: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
   private readonly base: HTMLCanvasElement;
+  private readonly fogCanvas = document.createElement('canvas');
+  private readonly terrain: Terrain;
 
   constructor(terrain: Terrain) {
+    this.terrain = terrain;
     const c = document.querySelector<HTMLCanvasElement>('#map-canvas');
     if (!c) throw new Error('map canvas');
     this.canvas = c;
@@ -20,6 +24,11 @@ export class MapView {
     this.base.width = c.width;
     this.base.height = c.height;
     this.paintBase(terrain);
+  }
+
+  /** Zone labels swap their primary language. */
+  setLang(): void {
+    this.paintBase(this.terrain);
   }
 
   private toPx(x: number, z: number): [number, number] {
@@ -91,10 +100,11 @@ export class MapView {
       ctx.fillRect(px - half * s, py - half * s, half * 2 * s, half * 2 * s);
       ctx.strokeRect(px - half * s, py - half * s, half * 2 * s, half * 2 * s);
       ctx.fillStyle = '#2a1a10';
-      ctx.font = '700 15px "El Messiri", serif';
-      ctx.fillText(zn.name, px, py + half * s + 16);
-      ctx.font = '15px "Amiri", serif';
-      ctx.fillText(zn.arabic, px, py + half * s + 33);
+      const [first, second] = lang() === 'ar' ? [zn.arabic, zn.name] : [zn.name, zn.arabic];
+      ctx.font = lang() === 'ar' ? '700 17px "El Messiri", serif' : '700 15px "El Messiri", serif';
+      ctx.fillText(first, px, py + half * s + 16);
+      ctx.font = '14px "Amiri", serif';
+      ctx.fillText(second, px, py + half * s + 33);
     }
     // frame + compass rose
     ctx.strokeStyle = '#2a1a10';
@@ -110,9 +120,55 @@ export class MapView {
     ctx.fill();
   }
 
-  draw(player: { x: number; z: number; yaw: number }, objective: { x: number; z: number } | null, hideout: { x: number; z: number }, foes: { x: number; z: number }[]): void {
+  draw(
+    player: { x: number; z: number; yaw: number },
+    objective: { x: number; z: number } | null,
+    hideout: { x: number; z: number },
+    foes: { x: number; z: number }[],
+    fog: Uint8Array,
+    fogN: number,
+    landmarks: { x: number; z: number; name: Text }[],
+  ): void {
     const ctx = this.ctx;
     ctx.drawImage(this.base, 0, 0);
+    // fog of war: unexplored cells as aged parchment, blurred edges via bilinear upscale
+    if (this.fogCanvas.width !== fogN) {
+      this.fogCanvas.width = fogN;
+      this.fogCanvas.height = fogN;
+    }
+    const fctx = this.fogCanvas.getContext('2d') as CanvasRenderingContext2D;
+    const img = fctx.createImageData(fogN, fogN);
+    for (let i = 0; i < fog.length; i += 1) {
+      const o = i * 4;
+      img.data[o] = 214;
+      img.data[o + 1] = 196;
+      img.data[o + 2] = 160;
+      img.data[o + 3] = fog[i] ? 0 : 236;
+    }
+    fctx.putImageData(img, 0, 0);
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(this.fogCanvas, 0, 0, this.canvas.width, this.canvas.height);
+    ctx.restore();
+    // landmarks the player has found
+    ctx.textAlign = 'center';
+    for (const l of landmarks) {
+      const [px, py] = this.toPx(l.x, l.z);
+      ctx.fillStyle = '#7a1717';
+      ctx.beginPath();
+      ctx.moveTo(px, py - 8);
+      ctx.lineTo(px + 6, py + 4);
+      ctx.lineTo(px - 6, py + 4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = '#f1e8d4';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      ctx.font = '700 12px "El Messiri", serif';
+      ctx.fillStyle = '#2a1a10';
+      ctx.fillText(tr(l.name), px, py + 18);
+    }
     const dot = (x: number, z: number, color: string, r: number) => {
       const [px, py] = this.toPx(x, z);
       ctx.fillStyle = color;

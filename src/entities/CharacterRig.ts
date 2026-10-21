@@ -135,7 +135,9 @@ export class CharacterRig {
   readonly mesh: THREE.SkinnedMesh;
   readonly bones: THREE.Bone[] = [];
   readonly material: THREE.MeshStandardMaterial;
-  readonly rifle: THREE.Mesh | null;
+  /** Current long gun / sidearm mesh (one shown at a time). */
+  rifle: THREE.Mesh | null;
+  private readonly guns = new Map<string, THREE.Mesh>();
   readonly blade: THREE.Mesh | null;
   private phase = 0;
   private readonly restHipsY: number;
@@ -291,6 +293,7 @@ export class CharacterRig {
     this.root.add(this.mesh);
 
     this.rifle = opts.rifle ? buildRifle() : opts.pistol ? buildPistol() : null;
+    if (this.rifle) this.guns.set(this.rifle.name, this.rifle);
     this.blade = outfit === 'fidai' ? buildKhanjar() : null;
     if (this.rifle) this.holsterRifle();
     if (this.blade) this.sheathBlade();
@@ -306,6 +309,20 @@ export class CharacterRig {
 
   get chestBone(): THREE.Bone {
     return this.bones[CHEST];
+  }
+
+  /** Swap the carried gun model (player weapon switching). */
+  equipGun(kind: 'rifle' | 'pistol' | 'musket' | 'smg'): void {
+    if (this.rifle?.name === kind) return;
+    this.rifle?.removeFromParent();
+    this.rifleInHands = false;
+    let g = this.guns.get(kind);
+    if (!g) {
+      g = kind === 'rifle' ? buildRifle() : kind === 'pistol' ? buildPistol() : kind === 'musket' ? buildMusket() : buildSmg();
+      this.guns.set(kind, g);
+    }
+    this.rifle = g;
+    this.holsterRifle();
   }
 
   /** Rifle into the hands (aim / combat) */
@@ -639,21 +656,75 @@ function buildRifle(): THREE.Mesh {
   return mesh;
 }
 
-function buildPistol(): THREE.Mesh {
+/** Small parts list in hand space: barrel along -Y, stock/grip toward +Y. */
+function gunParts(): { parts: THREE.BufferGeometry[]; p: (g: THREE.BufferGeometry, color: string, x: number, y: number, z: number, rx?: number, rz?: number) => void } {
   const parts: THREE.BufferGeometry[] = [];
-  const g1 = new THREE.BoxGeometry(0.03, 0.2, 0.04);
-  g1.translate(0, -0.08, -0.01);
-  parts.push(vc(g1, '#2a2a2c'));
-  const g2 = new THREE.BoxGeometry(0.03, 0.05, 0.1);
-  g2.translate(0, 0.01, 0.03);
-  parts.push(vc(g2, '#3b2a1c'));
+  const p = (g: THREE.BufferGeometry, color: string, x: number, y: number, z: number, rx = 0, rz = 0) => {
+    g.rotateX(rx);
+    g.rotateZ(rz);
+    g.translate(x, y, z);
+    parts.push(vc(g, color));
+  };
+  return { parts, p };
+}
+
+function finishGun(parts: THREE.BufferGeometry[], name: string, muzzle: number, pistol = false): THREE.Mesh {
   const geo = mergeGeometries(parts, false);
-  if (!geo) throw new Error('pistol merge failed');
+  if (!geo) throw new Error(`${name} merge failed`);
   const mesh = new THREE.Mesh(geo, weaponMat);
-  mesh.userData.muzzle = -0.19;
-  mesh.userData.pistol = true;
-  mesh.name = 'pistol';
+  mesh.castShadow = true;
+  mesh.userData.muzzle = muzzle;
+  mesh.userData.pistol = pistol;
+  mesh.name = name;
   return mesh;
+}
+
+/** Ruby-pattern self-loading pistol: slide, frame, wooden grip, trigger guard. */
+function buildPistol(): THREE.Mesh {
+  const { parts, p } = gunParts();
+  p(new THREE.BoxGeometry(0.028, 0.17, 0.036), '#26262a', 0, -0.08, -0.012); // slide
+  p(new THREE.CylinderGeometry(0.007, 0.007, 0.02, 6), '#121214', 0, -0.17, -0.016); // muzzle
+  p(new THREE.BoxGeometry(0.026, 0.12, 0.02), '#303034', 0, -0.07, 0.012); // frame
+  p(new THREE.BoxGeometry(0.03, 0.04, 0.1), '#5a3a22', 0, 0.0, 0.035, -0.18); // grip
+  p(new THREE.TorusGeometry(0.018, 0.004, 4, 10, Math.PI), '#26262a', 0, -0.03, 0.03, 0, Math.PI / 2);
+  for (let i = 0; i < 5; i += 1) p(new THREE.BoxGeometry(0.03, 0.004, 0.008), '#18181a', 0, -0.03 - i * 0.012, -0.031);
+  return finishGun(parts, 'pistol', -0.19, true);
+}
+
+/** Moroccan moukahla: very long slim stock with brass bands and silver inlay. */
+function buildMusket(): THREE.Mesh {
+  const { parts, p } = gunParts();
+  p(new THREE.CylinderGeometry(0.011, 0.013, 1.3, 8), '#3a3a3e', 0, -0.62, -0.02); // barrel
+  p(new THREE.BoxGeometry(0.04, 1.05, 0.045), '#7a3f1e', 0, -0.48, 0.002); // fore stock
+  const stock = new THREE.Shape();
+  stock.moveTo(-0.02, 0);
+  stock.lineTo(0.022, 0);
+  stock.lineTo(0.05, 0.42);
+  stock.lineTo(-0.03, 0.42);
+  stock.closePath();
+  const sg = new THREE.ExtrudeGeometry(stock, { depth: 0.042, bevelEnabled: false });
+  sg.translate(0, 0, -0.021);
+  sg.rotateY(Math.PI / 2);
+  p(sg, '#6a3519', 0, 0.02, 0.0);
+  for (let i = 0; i < 6; i += 1) p(new THREE.CylinderGeometry(0.028, 0.028, 0.025, 10), '#c9a24a', 0, -0.12 - i * 0.17, -0.006); // brass bands
+  for (let i = 0; i < 4; i += 1) p(new THREE.BoxGeometry(0.044, 0.035, 0.012), '#d8d8dc', 0, 0.1 + i * 0.075, 0.018); // silver inlay
+  p(new THREE.BoxGeometry(0.02, 0.08, 0.035), '#2a2a2c', 0.022, -0.02, -0.022); // flintlock plate
+  p(new THREE.BoxGeometry(0.01, 0.04, 0.012), '#2a2a2c', 0.03, -0.04, -0.05, 0.6); // cock
+  p(new THREE.CylinderGeometry(0.004, 0.004, 1.1, 5), '#8a5a2a', 0, -0.55, 0.026); // ramrod
+  return finishGun(parts, 'musket', -1.27);
+}
+
+/** MAS-38: short receiver angled to the wooden stock, slim barrel. */
+function buildSmg(): THREE.Mesh {
+  const { parts, p } = gunParts();
+  p(new THREE.BoxGeometry(0.036, 0.3, 0.048), '#2c2c30', 0, -0.13, -0.018); // receiver
+  p(new THREE.CylinderGeometry(0.01, 0.01, 0.24, 8), '#1c1c1e', 0, -0.39, -0.022); // barrel
+  p(new THREE.CylinderGeometry(0.014, 0.014, 0.03, 8), '#1c1c1e', 0, -0.5, -0.022);
+  p(new THREE.BoxGeometry(0.022, 0.12, 0.03), '#232326', 0, -0.17, 0.045, 0.15); // magazine
+  p(new THREE.BoxGeometry(0.03, 0.06, 0.08), '#5c3b22', 0, -0.01, 0.04, -0.3); // grip
+  p(new THREE.BoxGeometry(0.038, 0.3, 0.05), '#6a4426', 0, 0.16, 0.02, 0.12); // stock
+  p(new THREE.BoxGeometry(0.008, 0.03, 0.01), '#1c1c1e', 0, -0.46, -0.048); // sight
+  return finishGun(parts, 'smg', -0.52);
 }
 
 /** Curved Moroccan khanjar (koummiya) with brass hilt. */

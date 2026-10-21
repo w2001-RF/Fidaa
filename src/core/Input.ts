@@ -17,6 +17,10 @@ export type Action =
   | 'interact'
   | 'weapon1'
   | 'weapon2'
+  | 'weapon3'
+  | 'weapon4'
+  | 'weapon5'
+  | 'craft'
   | 'drink'
   | 'eat'
   | 'heal'
@@ -43,6 +47,10 @@ const KEYMAP: Record<string, Action> = {
   KeyE: 'interact',
   Digit1: 'weapon1',
   Digit2: 'weapon2',
+  Digit3: 'weapon3',
+  Digit4: 'weapon4',
+  Digit5: 'weapon5',
+  KeyK: 'craft',
   KeyQ: 'drink',
   KeyF: 'eat',
   KeyH: 'heal',

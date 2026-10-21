@@ -384,3 +384,96 @@ kbd {
 @media (prefers-reduced-motion: reduce) {
   .gauge.low, #alert-badge.hunted .dot, .ind.alert { animation: none; }
 }
+
+/* ===== loading ===== */
+#loading-screen { background: radial-gradient(ellipse at 50% 40%, #1d1a2c 0%, #0b0c16 70%); z-index: 50; transition: opacity 0.6s ease; backdrop-filter: none; }
+#loading-screen.done { opacity: 0; pointer-events: none; }
+.loading-inner { display: grid; justify-items: center; gap: 14px; text-align: center; padding: 0 16px; }
+.loading-title { font: 700 22px/1 var(--head); letter-spacing: 0.3em; color: var(--text); }
+.loading-star { width: 54px; height: 54px; background: var(--brass); clip-path: polygon(50% 0, 61% 30%, 93% 25%, 70% 50%, 93% 75%, 61% 70%, 50% 100%, 39% 70%, 7% 75%, 30% 50%, 7% 25%, 39% 30%); animation: spin 6s linear infinite; opacity: 0.85; }
+.loading-bar { width: min(360px, calc(100vw - 48px)); height: 6px; background: rgba(201, 162, 74, 0.18); border: 1px solid var(--brass-soft); overflow: hidden; }
+.loading-bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #7d1515, var(--brass)); transition: width 0.35s ease; }
+#loading-step { font: 500 15px/1.3 var(--body); color: var(--muted); min-height: 1.3em; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ===== language switch / title actions ===== */
+.lang-switch { display: inline-flex; border: 1px solid var(--brass-soft); }
+.lang-btn { padding: 7px 16px; background: rgba(0, 0, 0, 0.3); border: 0; color: var(--muted); font: 700 15px/1 var(--head); cursor: pointer; }
+.lang-btn + .lang-btn { border-left: 1px solid var(--brass-soft); }
+.lang-btn.active { background: rgba(201, 162, 74, 0.28); color: var(--text); }
+.lang-btn:focus-visible { outline: 2px solid var(--brass); outline-offset: -2px; }
+.title-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+.btn-fullscreen.on { border-color: var(--green); }
+.check { display: flex; gap: 8px; align-items: center; font: 500 14px/1 var(--body); color: var(--muted); }
+.check input { accent-color: var(--brass); width: 16px; height: 16px; }
+
+/* ===== weapon slots & new weapon silhouettes ===== */
+#slots { display: flex; gap: 4px; }
+#slots i { width: 20px; height: 20px; display: grid; place-items: center; font: 700 11px/1 var(--head); font-style: normal; color: rgba(241, 232, 212, 0.25); border: 1px solid rgba(201, 162, 74, 0.2); background: rgba(0, 0, 0, 0.3); }
+#slots i.owned { color: var(--muted); border-color: var(--brass-soft); }
+#slots i.active { color: var(--ink-solid); background: var(--brass); border-color: var(--brass); }
+#weapon-icon.pistol { clip-path: polygon(8% 30%, 100% 30%, 100% 48%, 52% 48%, 46% 58%, 40% 90%, 22% 90%, 26% 54%, 8% 48%); }
+#weapon-icon.musket { clip-path: polygon(0 44%, 26% 40%, 32% 46%, 100% 44%, 100% 50%, 38% 54%, 33% 64%, 26% 66%, 22% 56%, 4% 70%, 0 66%); }
+#weapon-icon.smg { clip-path: polygon(0 40%, 20% 36%, 30% 42%, 92% 42%, 92% 36%, 100% 36%, 100% 52%, 58% 54%, 56% 86%, 48% 86%, 46% 56%, 36% 58%, 30% 72%, 22% 72%, 20% 56%, 4% 66%, 0 62%); }
+
+/* ===== new item icons ===== */
+.qi.dates { background: #7a3b1e; border-radius: 50%; transform: scaleX(0.7); }
+.qi.bandage { background: #efe6cf; clip-path: polygon(0 35%, 35% 35%, 35% 0, 65% 0, 65% 35%, 100% 35%, 100% 65%, 65% 65%, 65% 100%, 35% 100%, 35% 65%, 0 65%); }
+.qi.pammo { background: #b88a40; clip-path: polygon(38% 10%, 62% 10%, 66% 30%, 66% 90%, 34% 90%, 34% 30%); }
+.qi.shot { background: #5a5a60; border-radius: 50%; box-shadow: inset -3px -3px 0 rgba(0, 0, 0, 0.35); }
+.qi.scrap { background: #8a8f96; clip-path: polygon(10% 60%, 30% 20%, 55% 35%, 80% 10%, 95% 45%, 70% 70%, 85% 95%, 40% 85%, 15% 95%); }
+.qi.cloth { background: #b5463a; clip-path: polygon(0 20%, 100% 0, 85% 60%, 100% 100%, 10% 85%); }
+.qi.wood { background: #7a5232; clip-path: polygon(0 35%, 100% 20%, 100% 50%, 0 65%); }
+.qi.powder { background: #2a2622; border-radius: 30% 30% 45% 45%; box-shadow: inset 0 3px 0 #c9a24a; }
+
+/* ===== panel: scrolling, inventory sections, crafting, journal places ===== */
+.tab-body { max-height: min(64vh, 620px); overflow-y: auto; padding-bottom: 6px; }
+.inv-section + .inv-section { margin-top: 14px; }
+.inv-section h4 { margin: 0 0 8px; font: 700 14px/1 var(--head); letter-spacing: 0.12em; text-transform: uppercase; color: var(--brass); }
+.gear-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { display: inline-flex; gap: 6px; align-items: center; padding: 6px 10px; border: 1px solid var(--brass-soft); background: rgba(0, 0, 0, 0.3); font: 500 14px/1 var(--body); }
+.chip kbd { font: 700 11px/1 var(--head); padding: 2px 5px; background: var(--brass); color: var(--ink-solid); }
+.modal .craft-intro { margin: 0 0 12px; color: var(--muted); font: 400 14px/1.45 var(--body); text-align: start; max-width: none; }
+.craft-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.recipe { display: grid; gap: 6px; align-content: start; padding: 12px; border: 1px solid rgba(201, 162, 74, 0.25); background: rgba(0, 0, 0, 0.25); }
+.recipe.can { border-color: var(--brass); }
+.recipe.done { opacity: 0.55; }
+.recipe h5 { margin: 0; font: 700 16px/1.2 var(--head); }
+.recipe h5 em { font: 500 11px/1 var(--body); font-style: normal; padding: 2px 6px; margin-inline-start: 4px; background: rgba(201, 162, 74, 0.2); color: var(--brass); vertical-align: middle; }
+.modal .recipe p { margin: 0; font: 400 13.5px/1.4 var(--body); color: var(--muted); }
+.costs { display: flex; flex-wrap: wrap; gap: 6px 10px; font: 500 13px/1 var(--body); }
+.cost { display: inline-flex; gap: 5px; align-items: center; }
+.cost .qi { width: 14px; height: 14px; }
+.recipe .btn { padding: 8px 10px; font-size: 14px; }
+.recipe .btn:disabled { opacity: 0.5; cursor: default; font-size: 12.5px; }
+.journal-places { padding: 12px 0 4px; }
+.journal-places h3 { margin: 0 0 8px; font: 700 18px/1.2 var(--head); display: flex; gap: 10px; align-items: baseline; }
+.journal-places h3 span { color: var(--brass); font-size: 15px; }
+.journal-places ul { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 6px; }
+.journal-places li { padding: 6px 10px; border: 1px dashed rgba(201, 162, 74, 0.25); color: #6f6858; font: 500 14px/1.2 var(--body); }
+.journal-places li.found { border-style: solid; color: var(--text); }
+.pips small { margin-inline-start: 10px; color: var(--muted); font: 500 12px/1 var(--body); }
+
+/* ===== Darija (Arabic script): right-to-left text blocks, Arabic faces ===== */
+:root[data-lang="ar"] {
+  --body: 'El Messiri', 'Amiri', 'Segoe UI', sans-serif;
+}
+:root[data-lang="ar"] :is(#objective, #toasts, #dialogue, .modal, .title-inner, #banner, #prompt, #alert-badge, .map-legend, .loading-inner) { direction: rtl; }
+:root[data-lang="ar"] .panel,
+:root[data-lang="ar"] .tab-body { direction: rtl; text-align: right; }
+:root[data-lang="ar"] .controls-grid { text-align: right; }
+:root[data-lang="ar"] kbd { direction: ltr; unicode-bidi: isolate; }
+:root[data-lang="ar"] .title-sub { letter-spacing: 0.06em; font-size: 17px; }
+:root[data-lang="ar"] .title-intro { font-size: 19px; line-height: 1.75; }
+:root[data-lang="ar"] #dialogue p { font-size: 20px; line-height: 1.7; }
+:root[data-lang="ar"] .toast,
+:root[data-lang="ar"] #objective { font-size: 15px; }
+:root[data-lang="ar"] .inv-section h4 { letter-spacing: 0; }
+:root[data-lang="ar"] .lang-switch,
+:root[data-lang="ar"] #slots,
+:root[data-lang="ar"] #ammo { direction: ltr; }
+
+@media (max-width: 640px) {
+  .craft-grid { grid-template-columns: 1fr; }
+  .tab { font-size: 14px; padding: 12px 6px; }
+}

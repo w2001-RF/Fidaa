@@ -1,0 +1,138 @@
+import { L, type Text } from '../i18n';
+import type { ItemId, LootBundle } from './types';
+
+export type ItemKind = 'food' | 'medical' | 'ammo' | 'material' | 'quest';
+
+export const ITEMS: Record<ItemId, { name: Text; desc: Text; icon: string; kind: ItemKind }> = {
+  bread: { name: L('Khobz (bread)', 'الخبز'), desc: L('Eat: +40 hunger', 'كول: +40 شبعة'), icon: 'bread', kind: 'food' },
+  dates: { name: L('Dates', 'التمر'), desc: L('Eat: +18 hunger, +6 thirst', 'كول: +18 شبعة، +6 ريق'), icon: 'dates', kind: 'food' },
+  water: { name: L('Guerba (water skin)', 'القربة'), desc: L('Drink: +35 thirst per sip', 'شرب: +35 فكل جغمة'), icon: 'water', kind: 'food' },
+  herbs: { name: L('Wild thyme', 'الزعتر'), desc: L('Heals 35 over a few seconds', 'كيداوي 35 فشوية ديال الثواني'), icon: 'herbs', kind: 'medical' },
+  bandage: { name: L('Bandage', 'الفاصمة'), desc: L('Heals 60 at once (H)', 'كتداوي 60 دقة وحدة (H)'), icon: 'bandage', kind: 'medical' },
+  ammo: { name: L('Rifle cartridges', 'قرطاس الفيزي'), desc: L('8 mm Lebel rounds', 'قرطاس لوبيل 8 ملم'), icon: 'ammo', kind: 'ammo' },
+  pistolAmmo: { name: L('Pistol rounds', 'قرطاس الفردي'), desc: L('7.65 mm: pistol and MAS-38', '7.65 ملم: الفردي والميتراييت'), icon: 'pammo', kind: 'ammo' },
+  shot: { name: L('Musket charges', 'حشوات المكحلة'), desc: L('Powder and lead shot for the moukahla', 'البارود والرصاص ديال المكحلة'), icon: 'shot', kind: 'ammo' },
+  scrap: { name: L('Scrap metal', 'الخردة'), desc: L('Nails, wire, brass: for crafting', 'مسامر، سلك، نحاس: للصنعة'), icon: 'scrap', kind: 'material' },
+  cloth: { name: L('Cloth', 'الثوب'), desc: L('Rags and wool: for crafting', 'شراوط وصوف: للصنعة'), icon: 'cloth', kind: 'material' },
+  wood: { name: L('Wood', 'الحطب'), desc: L('Olive and argan wood: for crafting', 'حطب الزيتون والأركان: للصنعة'), icon: 'wood', kind: 'material' },
+  powder: { name: L('Gunpowder', 'البارود'), desc: L('Black powder: for ammunition', 'البارود الكحل: للقرطاس'), icon: 'powder', kind: 'material' },
+  leaflet: { name: L('Istiqlal leaflets', 'مناشير الاستقلال'), desc: L('Manifesto tracts to paste in the medina', 'منشورات الوثيقة باش تلصقهم فالمدينة'), icon: 'leaflet', kind: 'quest' },
+  key: { name: L('Prison key', 'ساروت الحبس'), desc: L("Taken from the Caïd's Khalifa", 'خديتيه من خليفة القايد'), icon: 'key', kind: 'quest' },
+};
+
+export const emptyInventory = (): Record<ItemId, number> => ({
+  bread: 0, dates: 0, herbs: 0, water: 0, bandage: 0, ammo: 0, pistolAmmo: 0, shot: 0, scrap: 0, cloth: 0, wood: 0, powder: 0, leaflet: 0, key: 0,
+});
+
+// ------------------------------------------------------------------ weapons
+
+export type WeaponId = 'blade' | 'rifle' | 'pistol' | 'musket' | 'smg';
+export type AmmoId = 'ammo' | 'pistolAmmo' | 'shot';
+
+export type GunDef = {
+  ammo: AmmoId;
+  clip: number;
+  reload: number;
+  /** seconds between shots */
+  interval: number;
+  /** hold to keep firing */
+  auto: boolean;
+  damage: number;
+  headMul: number;
+  range: number;
+  pellets: number;
+  spreadHip: number;
+  spreadAim: number;
+  /** radius in metres in which guards hear the shot */
+  noise: number;
+  trauma: number;
+  fov: number;
+  pistolPose: boolean;
+};
+
+export type WeaponDef = { slot: number; name: Text; icon: string; gun?: GunDef };
+
+export const WEAPONS: Record<WeaponId, WeaponDef> = {
+  blade: { slot: 1, name: L('Khanjar', 'الخنجر'), icon: 'blade' },
+  rifle: {
+    slot: 2,
+    name: L('Lebel rifle', 'فيزي لوبيل'),
+    icon: 'rifle',
+    gun: { ammo: 'ammo', clip: 5, reload: 2.3, interval: 1.05, auto: false, damage: 72, headMul: 2.8, range: 220, pellets: 1, spreadHip: 0.05, spreadAim: 0.004, noise: 80, trauma: 0.32, fov: 2.4, pistolPose: false },
+  },
+  pistol: {
+    slot: 3,
+    name: L('Ruby pistol', 'فردي روبي'),
+    icon: 'pistol',
+    gun: { ammo: 'pistolAmmo', clip: 9, reload: 1.5, interval: 0.3, auto: false, damage: 36, headMul: 2.6, range: 70, pellets: 1, spreadHip: 0.03, spreadAim: 0.012, noise: 42, trauma: 0.16, fov: 1.2, pistolPose: true },
+  },
+  musket: {
+    slot: 4,
+    name: L('Moukahla (musket)', 'المكحلة'),
+    icon: 'musket',
+    gun: { ammo: 'shot', clip: 1, reload: 3.0, interval: 0.6, auto: false, damage: 24, headMul: 1.6, range: 38, pellets: 8, spreadHip: 0.085, spreadAim: 0.06, noise: 95, trauma: 0.55, fov: 4, pistolPose: false },
+  },
+  smg: {
+    slot: 5,
+    name: L('MAS-38 submachine gun', 'ميتراييت MAS-38'),
+    icon: 'smg',
+    gun: { ammo: 'pistolAmmo', clip: 32, reload: 2.6, interval: 0.105, auto: true, damage: 22, headMul: 2.2, range: 85, pellets: 1, spreadHip: 0.055, spreadAim: 0.022, noise: 85, trauma: 0.12, fov: 0.7, pistolPose: false },
+  },
+};
+
+export const WEAPON_ORDER: WeaponId[] = ['blade', 'rifle', 'pistol', 'musket', 'smg'];
+
+// ------------------------------------------------------------------ crafting
+
+export type Recipe = {
+  id: string;
+  name: Text;
+  desc: Text;
+  cost: LootBundle;
+  /** items produced (scaled by the Artisan skill when `ammo`) */
+  gives?: LootBundle;
+  /** one-time crafts: weapons and gear */
+  weapon?: WeaponId;
+  upgrade?: Upgrade;
+  /** requires the workbench in Si Lahcen's house */
+  bench: boolean;
+  /** minimum Artisan rank */
+  artisan?: number;
+};
+
+export type Upgrade = 'bigSkin' | 'sharpBlade' | 'hillCloak' | 'satchel';
+
+export const RECIPES: Recipe[] = [
+  { id: 'bandage', name: L('Bandage', 'فاصمة'), desc: L('Cloth and thyme bound tight. Heals 60.', 'ثوب وزعتر مشدودين. كتداوي 60.'), cost: { cloth: 1, herbs: 1 }, gives: { bandage: 1 }, bench: false },
+  { id: 'rifle-ammo', name: L('Rifle cartridges ×3', 'قرطاس الفيزي ×3'), desc: L('Reload spent brass with powder.', 'عمّر النحاس الخاوي بالبارود.'), cost: { powder: 1, scrap: 1 }, gives: { ammo: 3 }, bench: false },
+  { id: 'pistol-ammo', name: L('Pistol rounds ×6', 'قرطاس الفردي ×6'), desc: L('For the Ruby and the MAS-38.', 'للفردي وللميتراييت.'), cost: { powder: 1, scrap: 1 }, gives: { pistolAmmo: 6 }, bench: false },
+  { id: 'shot', name: L('Musket charges ×3', 'حشوات المكحلة ×3'), desc: L('Powder, wadding and lead shot.', 'بارود، حشوة ورصاص.'), cost: { powder: 1, scrap: 1, cloth: 1 }, gives: { shot: 3 }, bench: false },
+  { id: 'musket', name: L('Restore the moukahla', 'صلّح المكحلة'), desc: L("A grandfather's musket: wild spread, terrible at close range.", 'مكحلة الجد: كتفرّق الرصاص، قاتلة من قريب.'), cost: { wood: 3, scrap: 3, cloth: 1 }, weapon: 'musket', gives: { shot: 3 }, bench: true },
+  { id: 'sharp', name: L('Whetted khanjar', 'خنجر مسنون'), desc: L('Khanjar strikes deal +60% damage.', 'ضربات الخنجر +60% قوة.'), cost: { scrap: 2, wood: 1 }, upgrade: 'sharpBlade', bench: true },
+  { id: 'skin', name: L('Large guerba', 'قربة كبيرة'), desc: L('The water skin holds 7 sips instead of 4.', 'القربة كتهز 7 جغمات بلاصت 4.'), cost: { cloth: 3, wood: 1 }, upgrade: 'bigSkin', bench: true },
+  { id: 'cloak', name: L('Hill-coloured cloak', 'سلهام بلون الجبل'), desc: L('Guards notice you 15% later.', 'العساسة كيشوفوك 15% معطّل.'), cost: { cloth: 4, herbs: 2 }, upgrade: 'hillCloak', bench: true, artisan: 1 },
+  { id: 'satchel', name: L('Smuggler satchel', 'شكارة المهرّب'), desc: L('Scavenge one extra material from every search.', 'زيد مادة وحدة من كل تفتيش.'), cost: { cloth: 3, scrap: 2, wood: 1 }, upgrade: 'satchel', bench: true, artisan: 2 },
+];
+
+export const UPGRADE_NAMES: Record<Upgrade, Text> = {
+  bigSkin: L('Large guerba', 'قربة كبيرة'),
+  sharpBlade: L('Whetted khanjar', 'خنجر مسنون'),
+  hillCloak: L('Hill-coloured cloak', 'سلهام بلون الجبل'),
+  satchel: L('Smuggler satchel', 'شكارة المهرّب'),
+};
+
+// ------------------------------------------------------------------ skills
+
+export type Skill = 'stealth' | 'marksman' | 'endurance' | 'scavenger' | 'artisan' | 'survivalist';
+export const SKILL_MAX = 5;
+
+export const SKILLS: Record<Skill, { name: Text; desc: Text }> = {
+  stealth: { name: L('Shadow of the Medina', 'ظل المدينة'), desc: L('Guards notice you 9% later per rank. Rank 3: silent sprint steps.', 'العساسة كيشوفوك 9% معطّل فكل درجة. الدرجة 3: الجري بلا حس.') },
+  marksman: { name: L('Mountain Marksman', 'نيشان الجبل'), desc: L('Steadier aim, +12% gun damage and faster reloads per rank.', 'نيشان ثابت، +12% قوة القرطاس وتعمار أسرع فكل درجة.') },
+  endurance: { name: L('Atlas Endurance', 'صبر الأطلس'), desc: L('+15 max health and +20 stamina per rank.', '+15 صحة و+20 نفس فكل درجة.') },
+  scavenger: { name: L('Souk Scavenger', 'بحّاث السوق'), desc: L('30% chance per rank to find extra materials and ammo when searching.', '30% فكل درجة باش تلقى مواد وقرطاس زايدين ملي تفتّش.') },
+  artisan: { name: L('Village Artisan', 'صنايعي الدوار'), desc: L('Crafted ammunition yields +1 per rank; unlocks advanced recipes.', 'القرطاس اللي كتصنع كيزيد +1 فكل درجة؛ كيحل وصفات جديدة.') },
+  survivalist: { name: L('Son of the Land', 'ولد البلاد'), desc: L('Hunger and thirst fall 12% slower per rank; food restores more.', 'الجوع والعطش كينقصو 12% بشوية فكل درجة؛ الماكلة كتشبّع كثر.') },
+};
+
+export const SKILL_ORDER: Skill[] = ['stealth', 'marksman', 'endurance', 'scavenger', 'artisan', 'survivalist'];

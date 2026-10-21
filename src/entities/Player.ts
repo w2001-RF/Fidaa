@@ -1,13 +1,16 @@
 import * as THREE from 'three';
 import type { Input } from '../core/Input';
+import { SKILL_ORDER, WEAPONS, emptyInventory, type Skill, type Upgrade, type WeaponId } from '../game/Items';
 import type { ItemId } from '../game/types';
+import type { Text } from '../i18n';
 import { clamp, dampAngle } from '../utils/noise';
 import type { CollisionWorld } from '../world/Collision';
 import type { Terrain } from '../world/Terrain';
 import { CharacterRig } from './CharacterRig';
 
-export type Weapon = 'blade' | 'rifle';
-export type Skill = 'stealth' | 'marksman' | 'endurance';
+export type Weapon = WeaponId;
+export type { Skill };
+export type DeathCause = { kind: 'thirst' | 'hunger' | 'shot' | 'melee'; by?: Text };
 
 export const TUNING = {
   runSpeed: 3.5,
@@ -24,12 +27,10 @@ export const TUNING = {
   sprintStaminaPerSec: 16,
   staminaRegen: 22,
   clipSize: 5,
-  reloadTime: 2.3,
-  fireInterval: 1.05,
   waterCharges: 4,
 };
 
-export const XP_LEVELS = [0, 60, 150, 280, 450, 680, 960, 1300, 1700];
+export const XP_LEVELS = [0, 60, 150, 280, 450, 680, 960, 1300, 1700, 2150, 2650, 3200, 3800, 4450, 5150, 5900, 6700, 7550];
 
 /**
  * The fidāʾī: movement, survival meters, inventory, weapons and progression.
@@ -55,31 +56,54 @@ export class Player {
   thirst = 70;
   dead = false;
   deathT = 0;
-  causeOfDeath = '';
+  causeOfDeath: DeathCause = { kind: 'shot' };
   lastDamageAt = -99;
   healPool = 0;
   flinch = 0;
   flash = 0;
 
   weapon: Weapon = 'blade';
-  clip = 3;
+  readonly owned = new Set<WeaponId>(['blade', 'rifle']);
+  readonly clips: Record<WeaponId, number> = { blade: 0, rifle: 3, pistol: 0, musket: 0, smg: 0 };
+  readonly upgrades = new Set<Upgrade>();
   meleeT = -1;
   meleeHitDone = false;
   fireCooldown = 0;
   reloadT = -1;
   interactT = 0;
 
-  inventory: Record<ItemId, number> = { bread: 1, dates: 2, herbs: 0, ammo: 7, leaflet: 0, key: 0, water: 1 };
+  inventory: Record<ItemId, number> = { ...emptyInventory(), bread: 1, dates: 2, ammo: 7, water: 1, cloth: 1 };
   xp = 0;
   level = 1;
   skillPoints = 0;
-  skills: Record<Skill, number> = { stealth: 0, marksman: 0, endurance: 0 };
+  skills = Object.fromEntries(SKILL_ORDER.map((k) => [k, 0])) as Record<Skill, number>;
 
   /** Footstep event fired by the animation phase */
   onFootstep: ((surfaceLoud: number) => void) | null = null;
   private stepPhase = 0;
   private readonly tmp = new THREE.Vector3();
   private readonly move = new THREE.Vector2();
+
+  /** Rounds in the current weapon's magazine. */
+  get clip(): number {
+    return this.clips[this.weapon];
+  }
+
+  set clip(v: number) {
+    this.clips[this.weapon] = v;
+  }
+
+  get gun() {
+    return WEAPONS[this.weapon].gun ?? null;
+  }
+
+  get waterCharges(): number {
+    return this.upgrades.has('bigSkin') ? 7 : TUNING.waterCharges;
+  }
+
+  get reloadTime(): number {
+    return (this.gun?.reload ?? 1) * (1 - this.skills.marksman * 0.07);
+  }
 
   get maxHealth(): number {
     return 100 + this.skills.endurance * 15;
@@ -112,13 +136,16 @@ export class Player {
   }
 
   setWeapon(w: Weapon): void {
+    if (!this.owned.has(w)) return;
+    if (w !== this.weapon) this.reloadT = -1;
     this.weapon = w;
-    if (w === 'rifle') {
-      this.rig.sheathBlade();
-      this.rig.drawRifle();
-    } else {
+    if (w === 'blade') {
       this.rig.holsterRifle();
       this.rig.drawBlade();
+    } else {
+      this.rig.sheathBlade();
+      this.rig.equipGun(w);
+      this.rig.drawRifle();
     }
   }
 
@@ -169,7 +196,7 @@ export class Player {
     this.vel.z += (dz * target - this.vel.z) * k;
 
     // ---- facing
-    if (this.aiming || this.weapon === 'rifle' && input.isHeld('attack')) {
+    if (this.aiming || this.weapon !== 'blade' && input.isHeld('attack')) {
       this.yaw = dampAngle(this.yaw, cameraYaw + Math.PI, 20, dt);
     } else if (moving) {
       this.yaw = dampAngle(this.yaw, Math.atan2(dx, dz), 11, dt);
@@ -213,10 +240,11 @@ export class Player {
     // ---- stamina & survival
     if (this.sprinting) this.stamina = Math.max(0, this.stamina - TUNING.sprintStaminaPerSec * dt);
     else if (this.meleeT < 0) this.stamina = Math.min(this.maxStamina, this.stamina + TUNING.staminaRegen * dt * (this.hunger > 20 ? 1 : 0.4));
-    this.hunger = Math.max(0, this.hunger - TUNING.hungerPerSec * dt * (this.sprinting ? 1.4 : 1));
-    this.thirst = Math.max(0, this.thirst - TUNING.thirstPerSec * dt * (this.sprinting ? 1.7 : 1));
+    const hardy = 1 - this.skills.survivalist * 0.12;
+    this.hunger = Math.max(0, this.hunger - TUNING.hungerPerSec * dt * hardy * (this.sprinting ? 1.4 : 1));
+    this.thirst = Math.max(0, this.thirst - TUNING.thirstPerSec * dt * hardy * (this.sprinting ? 1.7 : 1));
     if (this.hunger <= 0 || this.thirst <= 0) {
-      this.damage(1.25 * dt, this.thirst <= 0 ? 'Thirst' : 'Hunger', now, false);
+      this.damage(1.25 * dt, { kind: this.thirst <= 0 ? 'thirst' : 'hunger' }, now, false);
     } else if (this.hunger > 40 && this.thirst > 40 && now - this.lastDamageAt > 8) {
       this.health = Math.min(this.maxHealth, this.health + 0.9 * dt);
     }
@@ -228,7 +256,7 @@ export class Player {
 
     // ---- timers
     this.crouchAmt += ((this.crouched ? 1 : 0) - this.crouchAmt) * (1 - Math.exp(-10 * dt));
-    this.aimAmt += ((this.aiming && this.weapon === 'rifle' ? 1 : 0) - this.aimAmt) * (1 - Math.exp(-14 * dt));
+    this.aimAmt += ((this.aiming && this.weapon !== 'blade' ? 1 : 0) - this.aimAmt) * (1 - Math.exp(-14 * dt));
     this.fireCooldown = Math.max(0, this.fireCooldown - dt);
     this.flinch = Math.max(0, this.flinch - dt * 3);
     this.flash = Math.max(0, this.flash - dt * 5);
@@ -236,22 +264,23 @@ export class Player {
       this.meleeT += dt / 0.55;
       if (this.meleeT >= 1) this.meleeT = -1;
     }
-    if (this.reloadT >= 0) {
-      this.reloadT += dt / TUNING.reloadTime;
+    const gun = this.gun;
+    if (this.reloadT >= 0 && gun) {
+      this.reloadT += dt / this.reloadTime;
       if (this.reloadT >= 1) {
         this.reloadT = -1;
-        const need = TUNING.clipSize - this.clip;
-        const take = Math.min(need, this.inventory.ammo);
+        const need = gun.clip - this.clip;
+        const take = Math.min(need, this.inventory[gun.ammo]);
         this.clip += take;
-        this.inventory.ammo -= take;
+        this.inventory[gun.ammo] -= take;
       }
-    }
+    } else if (!gun) this.reloadT = -1;
 
     // ---- footsteps
     const prev = this.stepPhase;
     this.stepPhase += dt * this.moveSpeed / 1.1;
     if (this.grounded && Math.floor(prev) !== Math.floor(this.stepPhase) && this.moveSpeed > 0.6) {
-      this.onFootstep?.(this.sprinting ? 1 : this.crouched ? 0.25 : 0.6);
+      this.onFootstep?.(this.sprinting ? (this.skills.stealth >= 3 ? 0.7 : 1) : this.crouched ? 0.25 : 0.6);
     }
 
     this.rig.setFlash(this.flash);
@@ -277,7 +306,7 @@ export class Player {
     this.rig.root.rotation.y = this.yaw;
   }
 
-  damage(amount: number, cause: string, now: number, flinch = true): void {
+  damage(amount: number, cause: DeathCause, now: number, flinch = true): void {
     if (this.dead) return;
     this.health -= amount;
     this.lastDamageAt = now;
@@ -324,8 +353,9 @@ export class Player {
   stealthFactor(): number {
     let f = 1;
     if (this.crouched) f *= 0.55;
-    if (this.sprinting) f *= 1.35;
-    f *= 1 - this.skills.stealth * 0.12;
+    if (this.sprinting && this.skills.stealth < 3) f *= 1.35;
+    f *= 1 - this.skills.stealth * 0.09;
+    if (this.upgrades.has('hillCloak')) f *= 0.85;
     return f;
   }
 }

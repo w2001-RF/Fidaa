@@ -1,8 +1,9 @@
+import { L, type Text } from '../i18n';
 import type { LootBundle } from './types';
 
 export type Objective = {
   id: string;
-  text: string;
+  text: Text;
   /** event that advances this objective */
   event: string;
   count?: number;
@@ -10,79 +11,88 @@ export type Objective = {
   target?: string | string[];
 };
 
+export type Line = [speaker: Text, text: Text];
+
 export type Step = {
   objectives: Objective[];
   /** interactables enabled while this step is active (questGate values) */
   gate?: string;
   /** dialogue shown when talking to `npc` during this step; finishing it fires `talk:<npc>` */
   npc?: string;
-  lines?: [speaker: string, text: string][];
+  lines?: Line[];
 };
 
 export type Mission = {
   id: string;
-  title: string;
-  arabic: string;
-  brief: string;
+  title: Text;
+  brief: Text;
   steps: Step[];
   reward: { xp: number; items: LootBundle };
 };
 
+export const ZAHRA = L('Lalla Zahra', 'للا زهرة');
+export const LAHCEN = L('Si Lahcen', 'سي لحسن');
+
 export const MISSIONS: Mission[] = [
   {
     id: 'bread',
-    title: 'Bread and Water',
-    arabic: 'الخبز والماء',
-    brief: 'A fidāʾī who cannot eat or drink cannot fight. Learn to provide for yourself before the cell trusts you with more.',
-    reward: { xp: 45, items: { herbs: 1, dates: 2 } },
+    title: L('Bread and Water', 'الخبز والما'),
+    brief: L(
+      'A fidāʾī who cannot eat or drink cannot fight. Learn to provide for yourself before the cell trusts you with more.',
+      'الفدائي اللي ما كلاش وما شربش ما يقدرش يقاتل. تعلّم تدبّر على راسك عاد الخلية تتيق فيك بكثر.',
+    ),
+    reward: { xp: 45, items: { herbs: 1, dates: 2, cloth: 1 } },
     steps: [
       {
         npc: 'zahra',
         lines: [
-          ['Lalla Zahra', 'Driss, wlidi. Since the Manifesto of January, the Résidence has jailed every man who signed it or read it aloud.'],
-          ['Lalla Zahra', "The Caïd's mokhaznis ride with the French now. They watch the roads, the souk, even the wells."],
-          ['Lalla Zahra', 'Before anything else: fill your guerba at the well and take bread from the ferran. Out there, hunger and thirst will kill you faster than any bullet.'],
+          [ZAHRA, L('Driss, wlidi. Since the Manifesto of January, the Résidence has jailed every man who signed it or read it aloud.', 'إدريس، أولدي. من نهار وثيقة يناير، والإقامة كتحبس كل واحد سنياها ولا قراها بالجهر.')],
+          [ZAHRA, L("The Caïd's mokhaznis ride with the French now. They watch the roads, the souk, even the wells.", 'المخازنية ديال القايد ولّاو كيركبو مع الفرنساويين. كيعسّو الطرقان، والسوق، حتى البيار.')],
+          [ZAHRA, L('Before anything else: fill your guerba at the well and take bread from the ferran. Out there, hunger and thirst will kill you faster than any bullet.', 'قبل كلشي: عمّر القربة من البير وخود الخبز من الفرّان. لبرا، الجوع والعطش يقتلوك قبل أي قرطاسة.')],
         ],
-        objectives: [{ id: 'talk', text: 'Talk to Lalla Zahra', event: 'talk:zahra', target: 'npc:zahra' }],
+        objectives: [{ id: 'talk', text: L('Talk to Lalla Zahra', 'هضر مع للا زهرة'), event: 'talk:zahra', target: 'npc:zahra' }],
       },
       {
         objectives: [
-          { id: 'water', text: 'Draw water at the douar well', event: 'water:douar-well', target: 'it:douar-well' },
-          { id: 'bread', text: 'Take bread from the oven', event: 'oven:douar-oven', target: 'it:douar-oven' },
+          { id: 'water', text: L('Draw water at the douar well', 'جبد الما من بير الدوار'), event: 'water:douar-well', target: 'it:douar-well' },
+          { id: 'bread', text: L('Take bread from the oven', 'خود الخبز من الفرّان'), event: 'oven:douar-oven', target: 'it:douar-oven' },
         ],
       },
       {
         npc: 'zahra',
         lines: [
-          ['Lalla Zahra', 'Good. Keep your water skin full: wells, fountains and the oasis pond. Eat with F, drink with Q.'],
-          ['Lalla Zahra', 'Now go to Si Lahcen. He prints the words they are afraid of.'],
+          [ZAHRA, L('Good. Keep your water skin full: wells, fountains and the oasis pond. Eat with F, drink with Q.', 'مزيان. خلّي القربة ديما عامرة: البيار، السقايات والضاية ديال الواحة. كول بـF، شرب بـQ.')],
+          [ZAHRA, L('Search everything: jars, crates, the fallen. Cloth, wood, scrap and powder become bandages and cartridges at the bench (K).', 'فتّش كلشي: الخوابي، الصناديق، اللي طاحو. الثوب، الحطب، الخردة والبارود كيولّيو فاصمات وقرطاس فالبنكة (K).')],
+          [ZAHRA, L('Now go to Si Lahcen. He prints the words they are afraid of.', 'دابا سير عند سي لحسن. هو اللي كيطبع الكلام اللي كيخلعهم.')],
         ],
-        objectives: [{ id: 'back', text: 'Return to Lalla Zahra', event: 'talk:zahra', target: 'npc:zahra' }],
+        objectives: [{ id: 'back', text: L('Return to Lalla Zahra', 'رجع عند للا زهرة'), event: 'talk:zahra', target: 'npc:zahra' }],
       },
     ],
   },
   {
     id: 'leaflets',
-    title: 'Words of Freedom',
-    arabic: 'كلمات الحرية',
-    brief: "Paste the Istiqlal leaflets over the Résidence's curfew proclamations in the medina of Tadwart. Let the people read that Morocco demands its freedom.",
-    reward: { xp: 90, items: { ammo: 6, bread: 1 } },
+    title: L('Words of Freedom', 'كلمات الحرية'),
+    brief: L(
+      "Paste the Istiqlal leaflets over the Résidence's curfew proclamations in the medina of Tadwart. Let the people read that Morocco demands its freedom.",
+      'لصق مناشير الاستقلال فوق بلاغات حظر التجول ديال الإقامة فمدينة تادوارت. خلّي الناس يقراو بلّي المغرب كيطالب بالحرية ديالو.',
+    ),
+    reward: { xp: 90, items: { ammo: 6, bread: 1, powder: 1 } },
     steps: [
       {
         npc: 'lahcen',
         lines: [
-          ['Si Lahcen', 'So Zahra sent you. Take these: three tracts of the Manifesto, printed in Arabic and in French.'],
-          ['Si Lahcen', 'In the medina the Résidence has nailed up its curfew notices. Cover them. Let every merchant read: "Vive le Maroc libre."'],
-          ['Si Lahcen', 'Patrols walk the main streets and guard the gates. Crouch with C, stay out of their sight, and move by night if you can. If they see you, run and break the line of sight.'],
+          [LAHCEN, L('So Zahra sent you. Take these: three tracts of the Manifesto, printed in Arabic and in French.', 'إيوا زهرة صيفطاتك. خود هادو: تلاتة د المناشير ديال الوثيقة، مطبوعين بالعربية وبالفرنساوية.')],
+          [LAHCEN, L('In the medina the Résidence has nailed up its curfew notices. Cover them. Let every merchant read: "Vive le Maroc libre."', 'فالمدينة الإقامة سمّرات البلاغات ديال حظر التجول. غطّيهم. خلّي كل تاجر يقرا: "عاش المغرب حر."')],
+          [LAHCEN, L('Patrols walk the main streets and guard the gates. Crouch with C, stay out of their sight, and move by night if you can. If they see you, run and break the line of sight.', 'العسّة كدور فالزناقي الكبار وكتحضي البيبان. تكمّش بـC، بعّد من عينيهم، وتحرّك بالليل إلا قدرتي. إلا شافوك، جري وغبر من قدامهم.')],
         ],
-        objectives: [{ id: 'talk', text: 'Talk to Si Lahcen', event: 'talk:lahcen', target: 'npc:lahcen' }],
+        objectives: [{ id: 'talk', text: L('Talk to Si Lahcen', 'هضر مع سي لحسن'), event: 'talk:lahcen', target: 'npc:lahcen' }],
       },
       {
         gate: 'leaflets',
         objectives: [
           {
             id: 'paste',
-            text: 'Paste leaflets over the proclamations in the medina',
+            text: L('Paste leaflets over the proclamations in the medina', 'لصق المناشير فوق البلاغات فالمدينة'),
             event: 'leaflet',
             count: 3,
             target: ['it:leaflet-plaza', 'it:leaflet-souk', 'it:leaflet-north'],
@@ -92,98 +102,120 @@ export const MISSIONS: Mission[] = [
       {
         npc: 'lahcen',
         lines: [
-          ['Si Lahcen', 'They will be talking of it in the hammams tonight. Well done.'],
-          ['Si Lahcen', 'Here are cartridges for the old rifle. Use them sparingly: every shot brings the whole garrison.'],
+          [LAHCEN, L('They will be talking of it in the hammams tonight. Well done.', 'هاد الليلة غادي يهضرو عليها فالحمّامات. تبارك الله عليك.')],
+          [LAHCEN, L('Here are cartridges for the old rifle. Use them sparingly: every shot brings the whole garrison.', 'ها القرطاس ديال الفيزي القديم. خدم بيه بالعقل: كل قرطاسة كتجيب العسكر كاملين.')],
         ],
-        objectives: [{ id: 'back', text: 'Return to Si Lahcen', event: 'talk:lahcen', target: 'npc:lahcen' }],
+        objectives: [{ id: 'back', text: L('Return to Si Lahcen', 'رجع عند سي لحسن'), event: 'talk:lahcen', target: 'npc:lahcen' }],
       },
     ],
   },
   {
     id: 'wires',
-    title: 'Cut the Wires',
-    arabic: 'قطع الأسلاك',
-    brief: 'The telegraph line from the medina to the post of Bir Lahmam carries the arrest orders. Cut it in four places and the round-ups will be blind for days.',
-    reward: { xp: 110, items: { ammo: 5, bread: 1, herbs: 1 } },
+    title: L('Cut the Wires', 'قطع السلوك'),
+    brief: L(
+      'The telegraph line from the medina to the post of Bir Lahmam carries the arrest orders. Cut it in four places and the round-ups will be blind for days.',
+      'خط التيليغراف من المدينة لمركز بير لحمام كيهز الأوامر ديال الحبس. قطعو فربعة د البلايص والحملات غادي يبقاو عميين لمدة أيام.',
+    ),
+    reward: { xp: 110, items: { ammo: 5, bread: 1, herbs: 1, scrap: 2 } },
     steps: [
       {
         npc: 'lahcen',
         lines: [
-          ['Si Lahcen', 'Tomorrow they plan a round-up in the douars. The orders travel by the telegraph to Bir Lahmam.'],
-          ['Si Lahcen', 'Cut the wires at four poles along the eastern road. A soldier and a mokhazni walk that road; take them quietly from behind with your khanjar if you must.'],
+          [LAHCEN, L('Tomorrow they plan a round-up in the douars. The orders travel by the telegraph to Bir Lahmam.', 'غدّا ناويين يديرو حملة فالدواور. الأوامر كتمشي فالتيليغراف لبير لحمام.')],
+          [LAHCEN, L('Cut the wires at four poles along the eastern road. A soldier and a mokhazni walk that road; take them quietly from behind with your khanjar if you must.', 'قطع السلوك فربعة د الركايز على طريق الشرق. عسكري ومخزني كيدورو فديك الطريق؛ إلا اضطرّيتي، طيّحهم بالخنجر من اللور بلا حس.')],
         ],
-        objectives: [{ id: 'talk', text: 'Listen to Si Lahcen', event: 'talk:lahcen', target: 'npc:lahcen' }],
+        objectives: [{ id: 'talk', text: L('Listen to Si Lahcen', 'سمع لسي لحسن'), event: 'talk:lahcen', target: 'npc:lahcen' }],
       },
       {
         gate: 'wires',
-        objectives: [{ id: 'poles', text: 'Cut the telegraph wires on the eastern road', event: 'pole', count: 4, target: ['it:pole-1', 'it:pole-2', 'it:pole-3', 'it:pole-4'] }],
+        objectives: [{ id: 'poles', text: L('Cut the telegraph wires on the eastern road', 'قطع سلوك التيليغراف على طريق الشرق'), event: 'pole', count: 4, target: ['it:pole-1', 'it:pole-2', 'it:pole-3', 'it:pole-4'] }],
       },
       {
         npc: 'lahcen',
-        lines: [['Si Lahcen', 'The line is dead. Allah ybarek fik. Zahra is asking for you, it is about her brother.']],
-        objectives: [{ id: 'back', text: 'Return to Si Lahcen', event: 'talk:lahcen', target: 'npc:lahcen' }],
+        lines: [[LAHCEN, L('The line is dead. Allah ybarek fik. Zahra is asking for you, it is about her brother.', 'الخط مات. الله يبارك فيك. زهرة كتسوّل عليك، على خوها.')]],
+        objectives: [{ id: 'back', text: L('Return to Si Lahcen', 'رجع عند سي لحسن'), event: 'talk:lahcen', target: 'npc:lahcen' }],
       },
     ],
   },
   {
     id: 'prison',
-    title: "The Caïd's Prison",
-    arabic: 'سجن القايد',
-    brief: "The Caïd's men took Zahra's brother Hammou and two others for reading the Manifesto in the souk. They rot in the kasbah prison.",
-    reward: { xp: 150, items: { ammo: 4, herbs: 2 } },
+    title: L("The Caïd's Prison", 'حبس القايد'),
+    brief: L(
+      "The Caïd's men took Zahra's brother Hammou and two others for reading the Manifesto in the souk. They rot in the kasbah prison.",
+      'رجال القايد شدّو حمّو خو زهرة وجوج آخرين حيت قراو الوثيقة فالسوق. راهم كيتعذّبو فحبس القصبة.',
+    ),
+    reward: { xp: 150, items: { ammo: 4, herbs: 2, cloth: 2 } },
     steps: [
       {
         npc: 'zahra',
         lines: [
-          ['Lalla Zahra', 'My brother Hammou… the Caïd sold him to the French for a medal. He is in the prison of the kasbah, with two others.'],
-          ['Lalla Zahra', 'The Khalifa of the Caïd carries the key at his belt. Take it from him, by stealth or by force, and open that cell.'],
-          ['Lalla Zahra', 'The kasbah is full of mokhaznis. If they raise the alarm, the whole fortress will hunt you.'],
+          [ZAHRA, L('My brother Hammou… the Caïd sold him to the French for a medal. He is in the prison of the kasbah, with two others.', 'خويا حمّو… القايد باعو للفرنساويين على وسام. راه فحبس القصبة، مع جوج آخرين.')],
+          [ZAHRA, L('The Khalifa of the Caïd carries the key at his belt. Take it from him, by stealth or by force, and open that cell.', 'خليفة القايد هاز الساروت فالسمطة ديالو. خودو منو، بالحيلة ولا بالسيف، وحل داك الحبس.')],
+          [ZAHRA, L('The kasbah is full of mokhaznis. If they raise the alarm, the whole fortress will hunt you.', 'القصبة عامرة بالمخازنية. إلا صفّرو، القصبة كاملة غادي تقلّب عليك.')],
         ],
-        objectives: [{ id: 'talk', text: 'Talk to Lalla Zahra', event: 'talk:zahra', target: 'npc:zahra' }],
+        objectives: [{ id: 'talk', text: L('Talk to Lalla Zahra', 'هضر مع للا زهرة'), event: 'talk:zahra', target: 'npc:zahra' }],
       },
       {
-        objectives: [{ id: 'key', text: "Take the prison key from the Caïd's Khalifa", event: 'key', target: 'enemy:k-khalifa' }],
+        objectives: [{ id: 'key', text: L("Take the prison key from the Caïd's Khalifa", 'خود ساروت الحبس من خليفة القايد'), event: 'key', target: 'enemy:k-khalifa' }],
       },
       {
         gate: 'prison',
-        objectives: [{ id: 'free', text: 'Unlock the prison in the kasbah', event: 'prison', target: 'it:prison-door' }],
+        objectives: [{ id: 'free', text: L('Unlock the prison in the kasbah', 'حل الحبس فالقصبة'), event: 'prison', target: 'it:prison-door' }],
       },
       {
         npc: 'zahra',
         lines: [
-          ['Lalla Zahra', 'Hammou is free, and on his way to the mountains. I will never forget this, Driss.'],
-          ['Lalla Zahra', 'Si Lahcen has one last task. The biggest one.'],
+          [ZAHRA, L('Hammou is free, and on his way to the mountains. I will never forget this, Driss.', 'حمّو تسرّح، وراه فالطريق للجبل. عمّري ما ننسى ليك هادي، أ إدريس.')],
+          [ZAHRA, L('Si Lahcen has one last task. The biggest one.', 'سي لحسن عندو آخر خدمة. الكبيرة فيهم.')],
         ],
-        objectives: [{ id: 'back', text: 'Return to Lalla Zahra', event: 'talk:zahra', target: 'npc:zahra' }],
+        objectives: [{ id: 'back', text: L('Return to Lalla Zahra', 'رجع عند للا زهرة'), event: 'talk:zahra', target: 'npc:zahra' }],
       },
     ],
   },
   {
     id: 'cache',
-    title: 'Guns for the Mountains',
-    arabic: 'سلاح للجبال',
-    brief: 'The garrison of Bir Lahmam keeps a crate store of rifles. Brought to the mountains, they will arm the brothers who will not kneel.',
+    title: L('Guns for the Mountains', 'السلاح للجبال'),
+    brief: L(
+      'The garrison of Bir Lahmam keeps a crate store of rifles. Brought to the mountains, they will arm the brothers who will not kneel.',
+      'عسكر بير لحمام عندهم صناديق د المكاحل. إلا وصلو للجبل، غادي يسلّحو الخوت اللي ما كيركعوش.',
+    ),
     reward: { xp: 250, items: {} },
     steps: [
       {
         npc: 'lahcen',
         lines: [
-          ['Si Lahcen', 'Leaflets wake the people. But the day will come when words are not enough.'],
-          ['Si Lahcen', 'The post of Bir Lahmam keeps an arms cache in front of its depot. Steal it and bring it here. The brothers in the Atlas are waiting.'],
-          ['Si Lahcen', 'There is a sentry in the watchtower and a lieutenant who never sleeps. Go at night. Go carefully.'],
+          [LAHCEN, L('Leaflets wake the people. But the day will come when words are not enough.', 'المناشير كتفيّق الناس. ولكن غادي يجي نهار والكلام ما يبقاش كافي.')],
+          [LAHCEN, L('The post of Bir Lahmam keeps an arms cache in front of its depot. Steal it and bring it here. The brothers in the Atlas are waiting.', 'مركز بير لحمام عندو السلاح قدام المخزن. سرقو وجيبو لهنا. الخوت فالأطلس كيتسناو.')],
+          [LAHCEN, L('There is a sentry in the watchtower and a lieutenant who never sleeps. Go at night. Go carefully.', 'كاين عسّاس فالبرج وليوطنان عمّرو ما كينعس. سير بالليل. سير بشوية.')],
         ],
-        objectives: [{ id: 'talk', text: 'Talk to Si Lahcen', event: 'talk:lahcen', target: 'npc:lahcen' }],
+        objectives: [{ id: 'talk', text: L('Talk to Si Lahcen', 'هضر مع سي لحسن'), event: 'talk:lahcen', target: 'npc:lahcen' }],
       },
       {
         gate: 'cache',
-        objectives: [{ id: 'steal', text: 'Steal the arms cache at the post of Bir Lahmam', event: 'cache', target: 'it:arms-cache' }],
+        objectives: [{ id: 'steal', text: L('Steal the arms cache at the post of Bir Lahmam', 'سرق السلاح من مركز بير لحمام'), event: 'cache', target: 'it:arms-cache' }],
       },
       {
-        objectives: [{ id: 'home', text: 'Bring the weapons back to Douar Tifawt', event: 'reach:douar', target: 'hideout' }],
+        objectives: [{ id: 'home', text: L('Bring the weapons back to Douar Tifawt', 'رجّع السلاح لدوار تيفاوت'), event: 'reach:douar', target: 'hideout' }],
       },
     ],
   },
 ];
+
+/** Idle chatter when an NPC has nothing for the current quest step. */
+export const AMBIENT_LINES: Record<string, Text[]> = {
+  zahra: [
+    L('Eat when you can, drink when you can. The land is generous only to those who prepare.', 'كول ملي تقدر، وشرب ملي تقدر. الأرض كتعطي غير للي موجّد راسو.'),
+    L('Night is our friend, Driss. Their lanterns only light their own faces.', 'الليل صاحبنا، أ إدريس. القناديل ديالهم كيضوّيو غير على وجوههم.'),
+  ],
+  lahcen: [
+    L('A cartridge fired is a garrison awake. Use the khanjar when you can.', 'قرطاسة مطلوقة هي عسكر فايقين. خدم بالخنجر ملي تقدر.'),
+    L('Rest on the mat in my house if you need the night to come faster.', 'رتاح فوق الحصيرة فداري إلا بغيتي الليل يطيح دغيا.'),
+    L('My bench is yours. Bring me cloth, wood and scrap, and the old moukahla of my father will sing again.', 'البنكة ديالي ديالك. جيب ليا الثوب والحطب والخردة، والمكحلة ديال الوالد ترجع تغنّي.'),
+  ],
+  v1: [L('The Caïd took half my barley "for the war effort". Which war, I ask you?', 'القايد داّ ليا نص الشعير "على قبل الحرب". أشمن حرب، قول ليا؟')],
+  v2: [L('My son reads the Manifesto to the children at night. Allah protect him.', 'ولدي كيقرا الوثيقة للدراري بالليل. الله يحفظو.')],
+  v3: [L('Sheep do not ask for papers. Lucky sheep.', 'الغنم ما كيطلبوش الأوراق. سعدات الغنم.'), L('Past the ruined ksar to the north, there is a lookout. From there you can see half the country.', 'من ورا القصر الخربان فالشمال كاين مرقب. من تمّا كتشوف نص البلاد.')],
+};
 
 export type QuestEventResult = {
   progressed: boolean;
@@ -225,7 +257,7 @@ export class QuestSystem {
   }
 
   /** NPC dialogue if this NPC has something to say for the current step. */
-  dialogueFor(npc: string): [string, string][] | null {
+  dialogueFor(npc: string): Line[] | null {
     const st = this.currentStep;
     if (st?.npc === npc && st.lines) return st.lines;
     return null;

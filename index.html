@@ -27,10 +27,10 @@
             <div class="bar stamina"><i id="stamina-fill"></i></div>
           </div>
           <div class="gauges">
-            <div class="gauge" id="hunger-gauge" title="Hunger">
+            <div class="gauge" id="hunger-gauge" data-i18n-title="hud.hunger">
               <svg viewBox="0 0 24 24"><path d="M4 13c0-4 3.6-7 8-7s8 3 8 7c0 2.6-2.2 4-8 4s-8-1.4-8-4zm3 0h10M8 10.5l1 1M12 9.6v1.4M16 10.5l-1 1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
             </div>
-            <div class="gauge" id="thirst-gauge" title="Thirst">
+            <div class="gauge" id="thirst-gauge" data-i18n-title="hud.thirst">
               <svg viewBox="0 0 24 24"><path d="M9 3h6l-1 3c3 1 4.5 4 4.5 7 0 4.4-2.9 8-6.5 8S5.5 17.4 5.5 13c0-3 1.5-6 4.5-7z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8 14c1 1.6 2.4 2.4 4 2.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
             </div>
             <div class="gauge-label"><span id="hunger-num">85</span><span id="thirst-num">70</span></div>
@@ -42,7 +42,7 @@
         <div id="status">
           <div id="clock"><span id="clock-icon"></span><span id="clock-text">16:30</span></div>
           <div id="alert-badge" class="hidden-state"><span class="dot"></span><span id="alert-text">Unseen</span></div>
-          <div id="level"><span class="lvl">Lv <b id="level-num">1</b></span><div class="xpbar"><i id="xp-fill"></i></div></div>
+          <div id="level"><span class="lvl"><span data-i18n="hud.level">Lv</span> <b id="level-num">1</b></span><div class="xpbar"><i id="xp-fill"></i></div></div>
         </div>
 
         <div id="objective">
@@ -62,6 +62,7 @@
             <div id="weapon-icon"></div>
             <div class="wtext"><span id="weapon-name">Khanjar</span><span id="ammo"><b id="ammo-clip">—</b><i id="ammo-reserve"></i></span></div>
           </div>
+          <div id="slots" aria-hidden="true"></div>
         </div>
 
         <div id="crosshair"><i></i><i></i><i></i><i></i></div>
@@ -70,50 +71,66 @@
         <div id="indicators"></div>
         <div id="damage-dir"></div>
         <div id="banner" class="hidden"><small id="banner-kicker"></small><strong id="banner-title"></strong><span id="banner-sub"></span></div>
-        <div id="lock-hint" class="hidden">Click to take control · <kbd>Esc</kbd> pauses</div>
+        <div id="lock-hint" class="hidden" data-i18n-html="hud.lockHint"></div>
       </section>
 
       <div id="dialogue" class="hidden">
         <div class="speaker" id="dlg-speaker"></div>
         <p id="dlg-text"></p>
-        <div class="dlg-next"><kbd>E</kbd> / click to continue</div>
+        <div class="dlg-next" data-i18n-html="hud.dlgNext"></div>
       </div>
 
       <div id="flash"></div>
 
+      <!-- ===== LOADING ===== -->
+      <section id="loading-screen" class="overlay" aria-live="polite">
+        <div class="loading-inner">
+          <div class="title-ar">فدائي</div>
+          <div class="loading-title">FIDĀʾĪ · 1945</div>
+          <div class="loading-star" aria-hidden="true"></div>
+          <div class="loading-bar"><i id="loading-fill"></i></div>
+          <div id="loading-step">…</div>
+        </div>
+      </section>
+
       <!-- ===== TITLE ===== -->
-      <section id="title-screen" class="overlay">
+      <section id="title-screen" class="overlay hidden">
         <div class="title-inner">
           <div class="title-ar">فدائي</div>
           <h1>FIDĀʾĪ</h1>
-          <div class="title-sub">Morocco · 1945 · The Protectorate</div>
-          <p class="title-intro">
-            Since the Manifesto of Independence of <b>11 January 1944</b>, the Résidence Générale has answered the nationalists with arrests, curfews and the whip.
-            In the countryside, the Caïds and their mokhaznis serve the occupier. You are <b>Driss</b>, a young fidāʾī of a clandestine cell in the douar of Tifawt.
-            Survive the land. Strike, and vanish.
-          </p>
-          <button id="btn-start" class="btn primary" type="button">Begin the struggle</button>
-          <div class="controls-grid">
-            <div><kbd>W A S D</kbd> move</div><div><kbd>Mouse</kbd> look</div>
-            <div><kbd>Shift</kbd> sprint</div><div><kbd>C</kbd> crouch / sneak</div>
-            <div><kbd>LMB</kbd> strike / fire</div><div><kbd>RMB</kbd> aim rifle</div>
-            <div><kbd>1</kbd> khanjar <kbd>2</kbd> rifle</div><div><kbd>R</kbd> reload</div>
-            <div><kbd>E</kbd> interact / takedown</div><div><kbd>Q F H</kbd> drink · eat · herbs</div>
-            <div><kbd>Tab</kbd> inventory &amp; skills</div><div><kbd>M</kbd> map · <kbd>Esc</kbd> pause</div>
+          <div class="title-sub" data-i18n="title.sub"></div>
+          <div class="lang-switch" role="group" data-i18n-aria="lang.label"><button type="button" class="lang-btn" data-lang="en">English</button><button type="button" class="lang-btn" data-lang="ar">الدارجة</button></div>
+          <p class="title-intro" data-i18n-html="title.intro"></p>
+          <div class="title-actions">
+            <button id="btn-start" class="btn primary" type="button" data-i18n="title.start">Begin the struggle</button>
+            <button class="btn btn-fullscreen" type="button" data-i18n="ui.fullscreen"></button>
           </div>
-          <p class="title-note">A work of historical fiction. Places and characters are invented; the struggle for independence (1944–1956) was not.</p>
+          <div class="controls-grid">
+            <div><kbd>W A S D</kbd> <span data-i18n="ctl.move"></span></div><div><kbd>Mouse</kbd> <span data-i18n="ctl.look"></span></div>
+            <div><kbd>Shift</kbd> <span data-i18n="ctl.sprint"></span></div><div><kbd>C</kbd> <span data-i18n="ctl.crouch"></span></div>
+            <div><kbd>LMB</kbd> <span data-i18n="ctl.strike"></span></div><div><kbd>RMB</kbd> <span data-i18n="ctl.aim"></span></div>
+            <div><kbd>1–5</kbd> <span data-i18n="ctl.weapons"></span></div><div><kbd>R</kbd> <span data-i18n="ctl.reload"></span></div>
+            <div><kbd>E</kbd> <span data-i18n="ctl.interact"></span></div><div><kbd>Q F H</kbd> <span data-i18n="ctl.consume"></span></div>
+            <div><kbd>Tab</kbd> <span data-i18n="ctl.inventory"></span></div><div><kbd>K</kbd> <span data-i18n="ctl.craft"></span></div>
+            <div><kbd>M</kbd> <span data-i18n="ctl.map"></span></div><div><kbd>Esc</kbd> <span data-i18n="ctl.pause"></span></div>
+          </div>
+          <p class="title-note" data-i18n="title.note"></p>
         </div>
       </section>
 
       <!-- ===== PAUSE ===== -->
       <section id="pause-screen" class="overlay hidden">
         <div class="modal">
-          <h2>Paused</h2>
-          <button id="btn-resume" class="btn primary" type="button">Resume</button>
-          <button id="btn-mute" class="btn" type="button">Sound: on</button>
-          <label class="slider">Volume <input id="vol" type="range" min="0" max="1" step="0.05" value="0.8" /></label>
-          <label class="slider">Mouse sensitivity <input id="sens" type="range" min="0.0008" max="0.006" step="0.0002" value="0.0024" /></label>
-          <button id="btn-restart" class="btn subtle" type="button">Restart from the hideout</button>
+          <h2 data-i18n="pause.title"></h2>
+          <button id="btn-resume" class="btn primary" type="button" data-i18n="pause.resume"></button>
+          <div class="lang-switch" role="group" data-i18n-aria="lang.label"><button type="button" class="lang-btn" data-lang="en">English</button><button type="button" class="lang-btn" data-lang="ar">الدارجة</button></div>
+          <button class="btn btn-fullscreen" type="button" data-i18n="ui.fullscreen"></button>
+          <button id="btn-mute" class="btn" type="button" data-i18n="pause.soundOn"></button>
+          <label class="check"><input id="voices" type="checkbox" checked /> <span data-i18n="pause.voice"></span></label>
+          <label class="slider"><span data-i18n="pause.volume"></span> <input id="vol" type="range" min="0" max="1" step="0.05" value="0.8" /></label>
+          <label class="slider"><span data-i18n="pause.music"></span> <input id="music-vol" type="range" min="0" max="0.8" step="0.02" value="0.32" /></label>
+          <label class="slider"><span data-i18n="pause.sens"></span> <input id="sens" type="range" min="0.0008" max="0.006" step="0.0002" value="0.0024" /></label>
+          <button id="btn-restart" class="btn subtle" type="button" data-i18n="pause.restart"></button>
         </div>
       </section>
 
@@ -121,10 +138,10 @@
       <section id="death-screen" class="overlay hidden">
         <div class="modal grave">
           <div class="title-ar small">الشهيد</div>
-          <h2>You have fallen</h2>
+          <h2 data-i18n="death.title"></h2>
           <p id="death-cause"></p>
           <p class="hint" id="death-hint"></p>
-          <button id="btn-retry" class="btn primary" type="button">Rise again at Douar Tifawt</button>
+          <button id="btn-retry" class="btn primary" type="button" data-i18n="death.retry"></button>
         </div>
       </section>
 
@@ -132,16 +149,11 @@
       <section id="victory-screen" class="overlay hidden">
         <div class="modal wide">
           <div class="title-ar">الاستقلال</div>
-          <h2>The weapons reach the mountains</h2>
-          <p>
-            The rifles of Bir Lahmam are now in the Atlas. Tonight, in a hundred douars, people whisper the name of a fidāʾī they will never meet.
-          </p>
-          <p class="epilogue">
-            History did not end in 1945. In August 1953 the French deposed and exiled Sultan Mohammed V, and the armed resistance of the fidāʾiyīn and the Army of Liberation rose across the country.
-            The Sultan returned in November 1955, and on <b>2 March 1956</b> Morocco regained its independence.
-          </p>
+          <h2 data-i18n="victory.title"></h2>
+          <p data-i18n="victory.body"></p>
+          <p class="epilogue" data-i18n-html="victory.epilogue"></p>
           <div id="victory-stats"></div>
-          <button id="btn-continue" class="btn primary" type="button">Keep roaming the land</button>
+          <button id="btn-continue" class="btn primary" type="button" data-i18n="victory.continue"></button>
         </div>
       </section>
 
@@ -149,12 +161,14 @@
       <section id="panel" class="overlay hidden">
         <div class="modal panel">
           <nav class="tabs">
-            <button data-tab="inv" class="tab active" type="button">Satchel</button>
-            <button data-tab="journal" class="tab" type="button">Journal</button>
-            <button data-tab="skills" class="tab" type="button">Skills <span id="sp-badge"></span></button>
-            <button id="btn-close-panel" class="tab close" type="button" aria-label="Close">✕</button>
+            <button data-tab="inv" class="tab active" type="button" data-i18n="tab.inv"></button>
+            <button data-tab="craft" class="tab" type="button" data-i18n="tab.craft"></button>
+            <button data-tab="journal" class="tab" type="button" data-i18n="tab.journal"></button>
+            <button data-tab="skills" class="tab" type="button"><span data-i18n="tab.skills"></span> <span id="sp-badge"></span></button>
+            <button id="btn-close-panel" class="tab close" type="button" data-i18n-aria="tab.close">✕</button>
           </nav>
           <div class="tab-body" id="tab-inv"></div>
+          <div class="tab-body hidden" id="tab-craft"></div>
           <div class="tab-body hidden" id="tab-journal"></div>
           <div class="tab-body hidden" id="tab-skills"></div>
         </div>
@@ -164,7 +178,7 @@
       <section id="map-screen" class="overlay hidden">
         <div class="map-wrap">
           <canvas id="map-canvas" width="720" height="720"></canvas>
-          <div class="map-legend"><span class="lg you"></span>You <span class="lg obj"></span>Objective <span class="lg safe"></span>Hideout <span class="lg foe"></span>Hunting you · <kbd>M</kbd> close</div>
+          <div class="map-legend"><span class="lg you"></span><span data-i18n="map.you"></span> <span class="lg obj"></span><span data-i18n="map.objective"></span> <span class="lg safe"></span><span data-i18n="map.hideout"></span> <span class="lg foe"></span><span data-i18n="map.foe"></span> · <kbd>M</kbd> <span data-i18n="map.close"></span></div>
         </div>
       </section>
     </main>

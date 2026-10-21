@@ -17,3 +17,5 @@ public/assets/models/*
 !public/assets/models/bow/
 public/assets/models/bow/*
 !public/assets/models/bow/model.glb
+# Tripo job locks (only meaningful while a job runs)
+artifacts/*.lock

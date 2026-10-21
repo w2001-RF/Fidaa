@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "command": "image",
+  "args": {
+    "command": "image",
+    "image": "C:\\Users\\ULTRA PC\\Desktop\\Survival3D\\artifacts\\concepts\\bow-ref.png",
+    "enable_image_autofix": true,
+    "texture_alignment": "original_image",
+    "orientation": null,
+    "model_version": "v3.1-20260211",
+    "negative_prompt": null,
+    "model_seed": null,
+    "image_seed": null,
+    "texture_seed": null,
+    "texture_quality": "detailed",
+    "geometry_quality": null,
+    "face_limit": 8000,
+    "no_texture": false,
+    "no_pbr": false,
+    "smart_low_poly": false,
+    "quad": false,
+    "auto_size": false,
+    "compress": null,
+    "generate_parts": false,
+    "no_export_uv": false,
+    "wait": true,
+    "download": true,
+    "out_dir": "C:\\Users\\ULTRA PC\\Desktop\\Survival3D\\public\\assets\\models\\bow",
+    "interval": 8,
+    "timeout": 600
+  },
+  "stages": {
+    "task": {
+      "state": "rejected",
+      "files": {},
+      "request": {
+        "type": "image_to_model"
+      },
+      "last_error": "exhausted_credits"
+    }
+  }
+}

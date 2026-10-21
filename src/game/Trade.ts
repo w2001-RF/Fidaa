@@ -46,6 +46,7 @@ export const WARES: Ware[] = [
   { id: 'pistolAmmo', item: 'pistolAmmo', qty: 8, buy: 55, sell: 3, contraband: true },
   { id: 'shot', item: 'shot', qty: 4, buy: 30, sell: 3 },
   { id: 'bolt', item: 'bolt', qty: 6, buy: 24, sell: 2 },
+  { id: 'arrow', item: 'arrow', qty: 8, buy: 20, sell: 1 },
   // tools
   { id: 'axe', upgrade: 'axe', qty: 1, buy: 160 },
   { id: 'hammer', upgrade: 'hammer', qty: 1, buy: 160 },
@@ -53,6 +54,7 @@ export const WARES: Ware[] = [
   { id: 'skin', upgrade: 'bigSkin', qty: 1, buy: 70 },
   // guns
   { id: 'sling', weapon: 'sling', qty: 1, buy: 40 },
+  { id: 'bow', weapon: 'bow', qty: 1, buy: 280 },
   { id: 'crossbow', weapon: 'crossbow', qty: 1, buy: 650 },
   { id: 'musket', weapon: 'musket', qty: 1, buy: 450, contraband: true },
   { id: 'shotgun', weapon: 'shotgun', qty: 1, buy: 1300, contraband: true },

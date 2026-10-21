@@ -3,6 +3,7 @@
  * edge-triggered ones (cleared by endFrame()). Mouse look accumulates while
  * the pointer is locked to the canvas.
  */
+
 export type Action =
   | 'forward'
   | 'back'
@@ -23,6 +24,7 @@ export type Action =
   | 'weapon6'
   | 'weapon7'
   | 'weapon8'
+  | 'weapon9'
   | 'view'
   | 'lookBack'
   | 'craft'
@@ -58,6 +60,7 @@ const KEYMAP: Record<string, Action> = {
   Digit6: 'weapon6',
   Digit7: 'weapon7',
   Digit8: 'weapon8',
+  Digit9: 'weapon9',
   KeyK: 'craft',
   KeyV: 'view',
   KeyB: 'lookBack',

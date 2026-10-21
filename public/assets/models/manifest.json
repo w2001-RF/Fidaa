@@ -1,0 +1,7 @@
+{ 
+    "weapons": { 
+        "bow": { 
+            "file": "bow/model.glb", "length": 1.15 
+        } 
+    } 
+}

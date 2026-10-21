@@ -255,6 +255,7 @@ export const STRINGS = {
   'trade.poor': L('Not enough francs.', 'ما عندكش الفلوس.'),
   'trade.honest': L('An honest stall: no powder, no cartridges, no guns.', 'حانوت نقي: لا بارود، لا قرطاس، لا سلاح.'),
   'trade.smuggler': L('A smuggler: powder, cartridges and guns from under the counter.', 'مهرّب: البارود والقرطاس والسلاح من تحت الكونطوار.'),
+  'msg.arrowBack': L('Arrow recovered (+{n})', 'رجّعتي النبلة (+{n})'),
   'msg.boltBack': L('Bolt recovered (+{n})', 'رجّعتي السهم (+{n})'),
   'camp.noRoom': L('No room here: find flat, open ground.', 'ما كاينش البلاصة هنا: قلّب على أرض مستوية وخاوية.'),
   'craft.needOven': L('Needs a clay oven', 'خاصّو الفرّان'),

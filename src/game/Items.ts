@@ -17,7 +17,8 @@ export const ITEMS: Record<ItemId, { name: Text; desc: Text; icon: string; kind:
   ammo: { name: L('Rifle cartridges', 'قرطاس الفيزي'), desc: L('8 mm Lebel rounds', 'قرطاس لوبيل 8 ملم'), icon: 'ammo', kind: 'ammo' },
   pistolAmmo: { name: L('Pistol rounds', 'قرطاس الفردي'), desc: L('7.65 mm: pistol and MAS-38', '7.65 ملم: الفردي والميتراييت'), icon: 'pammo', kind: 'ammo' },
   shot: { name: L('Musket charges', 'حشوات المكحلة'), desc: L('Powder and lead shot for the moukahla', 'البارود والرصاص ديال المكحلة'), icon: 'shot', kind: 'ammo' },
-  bolt: { name: L('Crossbow bolts', 'سهام القوس'), desc: L('Olive-wood shafts with iron heads', 'عصي الزيتون براس ديال الحديد'), icon: 'bolt', kind: 'ammo' },
+  arrow: { name: L('Arrows', 'النبال'), desc: L('Reed shafts, iron heads, vulture fletching', 'قصب براس ديال الحديد وريش النسر'), icon: 'arrow', kind: 'ammo' },
+  bolt: { name: L('Crossbow bolts', 'سهام الأرباليط'), desc: L('Olive-wood shafts with iron heads', 'عصي الزيتون براس ديال الحديد'), icon: 'bolt', kind: 'ammo' },
   scrap: { name: L('Scrap metal', 'الخردة'), desc: L('Nails, wire, brass: for crafting', 'مسامر، سلك، نحاس: للصنعة'), icon: 'scrap', kind: 'material' },
   cloth: { name: L('Cloth', 'الثوب'), desc: L('Rags and wool: for crafting', 'شراوط وصوف: للصنعة'), icon: 'cloth', kind: 'material' },
   wood: { name: L('Wood', 'الحطب'), desc: L('Olive and argan wood: for crafting', 'حطب الزيتون والأركان: للصنعة'), icon: 'wood', kind: 'material' },
@@ -35,14 +36,14 @@ export const ITEMS: Record<ItemId, { name: Text; desc: Text; icon: string; kind:
 
 export const emptyInventory = (): Record<ItemId, number> => ({
   francs: 0, flour: 0, tagine: 0, tea: 0, driedMeat: 0,
-  bread: 0, dates: 0, herbs: 0, water: 0, bandage: 0, ammo: 0, pistolAmmo: 0, shot: 0, bolt: 0, scrap: 0, cloth: 0, wood: 0, powder: 0,
+  bread: 0, dates: 0, herbs: 0, water: 0, bandage: 0, ammo: 0, pistolAmmo: 0, shot: 0, bolt: 0, arrow: 0, scrap: 0, cloth: 0, wood: 0, powder: 0,
   rawMeat: 0, cookedMeat: 0, hide: 0, bone: 0, sinew: 0, stone: 0, ore: 0, leaflet: 0, key: 0,
 });
 
 // ------------------------------------------------------------------ weapons
 
-export type WeaponId = 'blade' | 'rifle' | 'pistol' | 'musket' | 'smg' | 'sling' | 'shotgun' | 'crossbow';
-export type AmmoId = 'ammo' | 'pistolAmmo' | 'shot' | 'bolt';
+export type WeaponId = 'blade' | 'rifle' | 'pistol' | 'musket' | 'smg' | 'sling' | 'shotgun' | 'crossbow' | 'bow';
+export type AmmoId = 'ammo' | 'pistolAmmo' | 'shot' | 'bolt' | 'arrow';
 
 export type GunDef = {
   ammo: AmmoId;
@@ -109,14 +110,21 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
   },
   crossbow: {
     slot: 8,
-    name: L('Crossbow', 'القوس'),
+    name: L('Crossbow', 'الأرباليط'),
     icon: 'crossbow',
     // one heavy bolt, slow to span, almost silent: the hunter's and the sentry-killer's weapon
     gun: { ammo: 'bolt', clip: 1, reload: 1.9, interval: 0.5, auto: false, damage: 80, headMul: 2.6, range: 120, pellets: 1, spreadHip: 0.035, spreadAim: 0.003, noise: 8, trauma: 0.08, fov: 0.8, pistolPose: false },
   },
+  bow: {
+    slot: 9,
+    name: L('Recurve bow', 'القوس'),
+    icon: 'bow',
+    // horn-and-sinew horse bow: quick to nock, lighter hit than the crossbow, the quietest weapon there is
+    gun: { ammo: 'arrow', clip: 1, reload: 0.8, interval: 0.35, auto: false, damage: 55, headMul: 2.4, range: 95, pellets: 1, spreadHip: 0.04, spreadAim: 0.006, noise: 4, trauma: 0.05, fov: 0.6, pistolPose: false },
+  },
 };
 
-export const WEAPON_ORDER: WeaponId[] = ['blade', 'rifle', 'pistol', 'musket', 'smg', 'sling', 'shotgun', 'crossbow'];
+export const WEAPON_ORDER: WeaponId[] = ['blade', 'rifle', 'pistol', 'musket', 'smg', 'sling', 'shotgun', 'crossbow', 'bow'];
 
 // ------------------------------------------------------------------ crafting
 
@@ -164,8 +172,10 @@ export const RECIPES: Recipe[] = [
   { id: 'knife', name: L('Bone skinning knife', 'موس السلخ'), desc: L('Skin twice as fast and take more hide and meat.', 'سلخ جوج مرات أسرع وخود جلد ولحم كثر.'), cost: { bone: 2, scrap: 1, sinew: 1 }, upgrade: 'skinningKnife', bench: false },
   { id: 'vest', name: L('Boar-hide vest', 'صدرية من جلد الحلوف'), desc: L('Thick hide under the djellaba: 20% less damage.', 'جلد غليظ تحت الجلابة: 20% ضرر أقل.'), cost: { hide: 3, sinew: 2, bone: 1 }, upgrade: 'hideVest', bench: true },
   { id: 'shotgun', name: L('Restore the hunting shotgun', 'صلّح فيزي الصيد'), desc: L('Two barrels of buckshot: brutal up close, good for boar.', 'جوج فواهي ديال الرش: قاسح من قريب، مزيان للحلوف.'), cost: { scrap: 4, wood: 2, hide: 1, bone: 2 }, weapon: 'shotgun', gives: { shot: 4 }, bench: true, artisan: 1 },
-  { id: 'crossbow', name: L('Build a crossbow', 'صنع القوس'), desc: L('Olive stock, a steel bow from a cart spring, sinew string. Silent and deadly at range.', 'قاعدة زيتون، قوس من ريسور الكرّوسة، وتر من العصب. بلا حس وقاتل من بعيد.'), cost: { wood: 3, scrap: 3, sinew: 2, bone: 1 }, weapon: 'crossbow', gives: { bolt: 6 }, bench: true, artisan: 1 },
-  { id: 'bolts', name: L('Crossbow bolts ×4', 'سهام القوس ×4'), desc: L('Whittled shafts with hammered iron heads.', 'عصي منجورة براس ديال الحديد المضروب.'), cost: { wood: 1, scrap: 1 }, gives: { bolt: 4 }, bench: false },
+  { id: 'crossbow', name: L('Build a crossbow', 'صنع الأرباليط'), desc: L('Olive stock, a steel bow from a cart spring, sinew string. Silent and deadly at range.', 'قاعدة زيتون، قوس من ريسور الكرّوسة، وتر من العصب. بلا حس وقاتل من بعيد.'), cost: { wood: 3, scrap: 3, sinew: 2, bone: 1 }, weapon: 'crossbow', gives: { bolt: 6 }, bench: true, artisan: 1 },
+  { id: 'bolts', name: L('Crossbow bolts ×4', 'سهام الأرباليط ×4'), desc: L('Whittled shafts with hammered iron heads.', 'عصي منجورة براس ديال الحديد المضروب.'), cost: { wood: 1, scrap: 1 }, gives: { bolt: 4 }, bench: false },
+  { id: 'bow', name: L('Make a recurve bow', 'صنع القوس'), desc: L('Wood core, horn belly, sinew back, a bone grip: the old horse bow. Quick, silent, arrows you can fetch back.', 'قلب ديال الخشب، قرن، عصب، ومقبض ديال العظم: القوس القديم. سريع، بلا حس، والنبال كترجعهم.'), cost: { wood: 2, bone: 2, sinew: 3, hide: 1 }, weapon: 'bow', gives: { arrow: 8 }, bench: true },
+  { id: 'arrows', name: L('Arrows ×6', 'النبال ×6'), desc: L('Reed shafts, iron points, feathers.', 'قصب، روس ديال الحديد، وريش.'), cost: { wood: 1, scrap: 1 }, gives: { arrow: 6 }, bench: false },
   // ---- camp: build anywhere, in front of you
   { id: 'camp-fire', name: L('Campfire', 'العافية'), desc: L('A ring of stones: grill, brew tea, dry meat. Lights the night.', 'دورة ديال الحجر: شوي، طيّب أتاي، نشّف اللحم. كتضوّي فالليل.'), cost: { wood: 3, stone: 3 }, build: 'fire', bench: false },
   { id: 'camp-oven', name: L('Clay oven (tannour)', 'الفرّان ديال الطين'), desc: L('Bake bread from flour, simmer a tagine.', 'طيّب الخبز من الطحين، والطاجين.'), cost: { stone: 6, wood: 2, cloth: 1 }, build: 'oven', bench: false },

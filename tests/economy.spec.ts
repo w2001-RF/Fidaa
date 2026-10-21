@@ -23,40 +23,50 @@ async function boot(page: Page, errors: string[]): Promise<void> {
   await page.evaluate(() => window.__THREE_GAME_TEST_HOOKS__?.setHour?.(12));
 }
 
-test('crossbow bolts can be picked up again after the shot', async ({ page }) => {
-  test.setTimeout(process.env.CI ? 300_000 : 120_000);
-  const errors: string[] = [];
-  await boot(page, errors);
-  // open ground on the douar strip; shoot into the dirt a few metres ahead
-  await tp(page, -70, 118);
-  await page.evaluate(() => {
-    const h = window.__THREE_GAME_TEST_HOOKS__;
-    h?.grantWeapon?.('crossbow');
-    h?.give?.({ bolt: 4 });
+const shooters = [
+  { weapon: 'crossbow', key: 'Digit8', ammo: 'bolt', hook: 'bolts' },
+  { weapon: 'bow', key: 'Digit9', ammo: 'arrow', hook: 'arrows' },
+] as const;
+
+for (const s of shooters) {
+  test(`${s.weapon}: the ${s.ammo}s can be picked up again after the shot`, async ({ page }) => {
+    test.setTimeout(process.env.CI ? 300_000 : 120_000);
+    const errors: string[] = [];
+    await boot(page, errors);
+    // open ground on the douar strip; shoot into the dirt a few metres ahead
+    await tp(page, -70, 118);
+    await page.evaluate(([w, a]) => {
+      const h = window.__THREE_GAME_TEST_HOOKS__;
+      h?.ceasefire?.(true);
+      h?.grantWeapon?.(w);
+      h?.give?.({ [a]: 4 });
+    }, [s.weapon, s.ammo]);
+    await press(page, s.key);
+    await wait(page, 200);
+    expect((await game(page) as G & { weapon: string }).weapon).toBe(s.weapon);
+    const pos = await page.evaluate(() => window.__THREE_GAME_DIAGNOSTICS__!.player.position);
+    const lyingNow = () => page.evaluate((hook) => window.__THREE_GAME_TEST_HOOKS__?.[hook]?.() ?? [], s.hook);
+    for (let shot = 0; shot < 3; shot += 1) {
+      await page.evaluate(([x, y, z]) => window.__THREE_GAME_TEST_HOOKS__?.aimAt?.(x, y, z), [pos.x + 7 + shot, pos.y, pos.z + 1]);
+      await page.evaluate(() => window.__THREE_GAME_TEST_HOOKS__?.input?.('attack', true));
+      await wait(page, 80);
+      await page.evaluate(() => window.__THREE_GAME_TEST_HOOKS__?.input?.('attack', false));
+      await press(page, 'KeyR');
+      await wait(page, 2300);
+    }
+    const lying = await lyingNow();
+    expect(lying.length, `${s.ammo}s lie where they struck (one in six may snap)`).toBeGreaterThan(0);
+    const before = (await game(page)).inventory[s.ammo];
+    for (const b of lying) {
+      await tp(page, b.x, b.z);
+      await wait(page, 250);
+    }
+    const after = (await game(page)).inventory[s.ammo];
+    expect(after - before, 'walked over them and picked them up').toBe(lying.length);
+    expect((await lyingNow()).length).toBe(0);
+    expect(errors).toEqual([]);
   });
-  await press(page, 'Digit8');
-  await wait(page, 200);
-  const pos = await page.evaluate(() => window.__THREE_GAME_DIAGNOSTICS__!.player.position);
-  for (let shot = 0; shot < 3; shot += 1) {
-    await page.evaluate(([x, y, z]) => window.__THREE_GAME_TEST_HOOKS__?.aimAt?.(x, y, z), [pos.x + 7 + shot, pos.y, pos.z + 1]);
-    await page.evaluate(() => window.__THREE_GAME_TEST_HOOKS__?.input?.('attack', true));
-    await wait(page, 80);
-    await page.evaluate(() => window.__THREE_GAME_TEST_HOOKS__?.input?.('attack', false));
-    await press(page, 'KeyR');
-    await wait(page, 2300);
-  }
-  const lying = await page.evaluate(() => window.__THREE_GAME_TEST_HOOKS__?.bolts?.() ?? []);
-  expect(lying.length, 'bolts lie where they struck (one in six may snap)').toBeGreaterThan(0);
-  const before = (await game(page)).inventory.bolt;
-  for (const b of lying) {
-    await tp(page, b.x, b.z);
-    await wait(page, 250);
-  }
-  const after = (await game(page)).inventory.bolt;
-  expect(after - before, 'walked over them and picked them up').toBe(lying.length);
-  expect((await page.evaluate(() => window.__THREE_GAME_TEST_HOOKS__?.bolts?.() ?? [])).length).toBe(0);
-  expect(errors).toEqual([]);
-});
+}
 
 test('trade: sell skins and ore in the souk, buy bread, a tool and a gun', async ({ page }) => {
   test.setTimeout(process.env.CI ? 300_000 : 120_000);

@@ -20,15 +20,18 @@ export class BoltDrops {
   private readonly m = new THREE.Matrix4();
   private readonly one = new THREE.Vector3(1, 1, 1);
 
-  constructor() {
+  /** `arrow`: the bow's longer, slimmer reed arrows with dark feathers instead of the crossbow's bolts */
+  constructor(readonly kind: 'bolt' | 'arrow' = 'bolt') {
+    const arrow = kind === 'arrow';
+    const len = arrow ? 0.74 : 0.42;
     const geo = merge([
-      part(new THREE.CylinderGeometry(0.008, 0.008, 0.42, 5), '#9a7a4a', 0, 0, 0),
-      part(new THREE.ConeGeometry(0.014, 0.06, 4), '#3a3a3e', 0, 0.24, 0),
-      part(new THREE.BoxGeometry(0.003, 0.08, 0.035), '#e8e0d0', 0, -0.17, 0),
-      part(new THREE.BoxGeometry(0.035, 0.08, 0.003), '#c42b2b', 0, -0.17, 0),
+      part(new THREE.CylinderGeometry(arrow ? 0.005 : 0.008, arrow ? 0.005 : 0.008, len, 5), arrow ? '#c8a46e' : '#9a7a4a', 0, 0, 0),
+      part(new THREE.ConeGeometry(arrow ? 0.01 : 0.014, 0.06, 4), '#3a3a3e', 0, len / 2 + 0.03, 0),
+      part(new THREE.BoxGeometry(0.003, 0.08, 0.035), '#e8e0d0', 0, -len / 2 + 0.04, 0),
+      part(new THREE.BoxGeometry(0.035, 0.08, 0.003), arrow ? '#3b3530' : '#c42b2b', 0, -len / 2 + 0.04, 0),
     ]);
     this.mesh = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7 }), MAX);
-    this.mesh.name = 'bolt-drops';
+    this.mesh.name = `${kind}-drops`;
     this.mesh.frustumCulled = false;
     this.mesh.castShadow = false;
     for (let i = 0; i < MAX; i += 1) this.mesh.setMatrixAt(i, HIDDEN);

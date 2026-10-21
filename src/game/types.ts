@@ -91,6 +91,7 @@ export type ItemId =
   | 'pistolAmmo'
   | 'shot'
   | 'bolt'
+  | 'arrow'
   | 'scrap'
   | 'cloth'
   | 'wood'

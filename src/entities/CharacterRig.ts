@@ -136,8 +136,8 @@ export class CharacterRig {
   readonly bones: THREE.Bone[] = [];
   readonly material: THREE.MeshStandardMaterial;
   /** Current long gun / sidearm mesh (one shown at a time). */
-  rifle: THREE.Mesh | null;
-  private readonly guns = new Map<string, THREE.Mesh>();
+  rifle: THREE.Object3D | null;
+  private readonly guns = new Map<string, THREE.Object3D>();
   readonly blade: THREE.Mesh | null;
   private phase = 0;
   private readonly restHipsY: number;
@@ -324,14 +324,40 @@ export class CharacterRig {
     return this.bones[CHEST];
   }
 
+  /**
+   * Hold a generated model (see WeaponModels) instead of the procedural weapon `kind`,
+   * now or the next time it is drawn.
+   */
+  useModel(kind: string, template: THREE.Object3D): void {
+    const g = template.clone(true);
+    g.name = kind;
+    g.userData = { ...template.userData };
+    if (kind === 'bow') g.add(bowArrow((template.userData.fit as { max: number[] }).max[1]));
+    const old = this.guns.get(kind);
+    this.guns.set(kind, g);
+    if (!old || this.rifle !== old) return;
+    const inHands = this.rifleInHands;
+    old.removeFromParent();
+    this.rifle = g;
+    this.rifleInHands = false;
+    if (inHands) this.drawRifle();
+    else this.holsterRifle();
+  }
+
+  /** The fit of a loaded weapon model (tests); null while the procedural weapon is in use. */
+  modelFit(kind: string): { size: number[]; min: number[]; max: number[] } | null {
+    const g = this.guns.get(kind);
+    return g?.userData.custom ? (g.userData.fit as { size: number[]; min: number[]; max: number[] }) : null;
+  }
+
   /** Swap the carried gun model (player weapon switching). */
-  equipGun(kind: 'rifle' | 'pistol' | 'musket' | 'smg' | 'sling' | 'shotgun' | 'crossbow'): void {
+  equipGun(kind: 'rifle' | 'pistol' | 'musket' | 'smg' | 'sling' | 'shotgun' | 'crossbow' | 'bow'): void {
     if (this.rifle?.name === kind) return;
     this.rifle?.removeFromParent();
     this.rifleInHands = false;
     let g = this.guns.get(kind);
     if (!g) {
-      g = kind === 'rifle' ? buildRifle() : kind === 'pistol' ? buildPistol() : kind === 'musket' ? buildMusket() : kind === 'sling' ? buildSling() : kind === 'shotgun' ? buildShotgun() : kind === 'crossbow' ? buildCrossbow() : buildSmg();
+      g = kind === 'rifle' ? buildRifle() : kind === 'pistol' ? buildPistol() : kind === 'musket' ? buildMusket() : kind === 'sling' ? buildSling() : kind === 'shotgun' ? buildShotgun() : kind === 'crossbow' ? buildCrossbow() : kind === 'bow' ? buildBow() : buildSmg();
       this.guns.set(kind, g);
     }
     this.rifle = g;
@@ -776,6 +802,51 @@ function buildCrossbow(): THREE.Mesh {
   p(new THREE.BoxGeometry(0.03, 0.04, 0.03), '#3a3a3e', 0, -0.09, -0.03); // nut
   p(new THREE.TorusGeometry(0.018, 0.004, 4, 10, Math.PI), '#2a2a2e', 0, 0.0, 0.03, 0, Math.PI / 2);
   return finishGun(parts, 'crossbow', -0.56);
+}
+
+/**
+ * Recurve horse bow after the reference photo: pale wood limbs that sweep forward
+ * from a bone-white grip, leather bands where the limbs meet the grip and the
+ * stiff ears, light horn tips bent back toward the archer, a grey string, an arrow
+ * on the string. Limbs run up and down (z), the arrow points forward (-y).
+ */
+function buildBow(): THREE.Mesh {
+  const { parts, p } = gunParts();
+  // half a limb as (forward y, up z) points; the other half is its mirror
+  const half: [number, number][] = [[-0.02, 0.0], [-0.045, 0.1], [-0.05, 0.2], [-0.03, 0.32], [0.01, 0.42], [0.06, 0.5], [0.12, 0.55], [0.17, 0.57]];
+  for (const s of [-1, 1]) {
+    const curve = new THREE.CatmullRomCurve3(half.map(([y, z]) => new THREE.Vector3(0, y, s * z)));
+    p(new THREE.TubeGeometry(curve, 24, 0.011, 6, false), '#b8925c', 0, 0, 0); // limb
+    // stiff ear (siyah) of light horn from the last bend to the nock
+    const ear = new THREE.CatmullRomCurve3(half.slice(5).map(([y, z]) => new THREE.Vector3(0, y, s * z)));
+    p(new THREE.TubeGeometry(ear, 8, 0.0125, 6, false), '#e2cfb0', 0, 0, 0);
+    // dark leather bands: grip ends and the ear joints
+    p(new THREE.CylinderGeometry(0.0145, 0.0145, 0.035, 6), '#5a3c24', 0, -0.045, s * 0.1, 0.25 * s);
+    p(new THREE.CylinderGeometry(0.0135, 0.0135, 0.03, 6), '#5a3c24', 0, 0.035, s * 0.465, -0.75 * s);
+  }
+  // the grip: wrapped white, with the arrow shelf above it
+  p(new THREE.CylinderGeometry(0.016, 0.016, 0.15, 8), '#ece6d8', 0, -0.03, 0, Math.PI / 2);
+  // string tip to tip, behind the grip
+  const [ty, tz] = half[half.length - 1];
+  p(new THREE.CylinderGeometry(0.0022, 0.0022, tz * 2, 4), '#a4a4a0', 0, ty, 0, Math.PI / 2);
+  for (const s of [-1, 1]) p(new THREE.SphereGeometry(0.006, 5, 4), '#c9a24a', 0, ty, s * 0.16); // brass serving marks
+  arrowParts(p, ty);
+  return finishGun(parts, 'bow', -0.62);
+}
+
+/** An arrow nocked on the string: reed shaft, iron head, fletching. `ty` is where the string sits. */
+function arrowParts(p: ReturnType<typeof gunParts>['p'], ty: number): void {
+  p(new THREE.CylinderGeometry(0.0045, 0.0045, 0.74, 5), '#c8a46e', 0, ty - 0.37, -0.02);
+  p(new THREE.ConeGeometry(0.009, 0.04, 4), '#3a3a3e', 0, ty - 0.76, -0.02, Math.PI);
+  p(new THREE.BoxGeometry(0.002, 0.08, 0.022), '#3b3530', 0, ty - 0.06, -0.032);
+  p(new THREE.BoxGeometry(0.022, 0.08, 0.002), '#e8e0d0', 0, ty - 0.06, -0.02);
+}
+
+/** The arrow for a generated bow model, which comes without one. */
+function bowArrow(ty: number): THREE.Mesh {
+  const { parts, p } = gunParts();
+  arrowParts(p, ty);
+  return finishGun(parts, 'bow-arrow', 0);
 }
 
 /** Curved Moroccan khanjar (koummiya) with brass hilt. */

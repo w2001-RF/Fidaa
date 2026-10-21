@@ -56,6 +56,9 @@ interface ThreeGameTestHooks {
   pilot?(x: number, alt: number, z: number, yaw: number, speed: number, flaps?: number): void;
   save?(): Promise<string>;
   bolts?(): { x: number; y: number; z: number }[];
+  /** where a loaded weapon model sits in gun space (size, min, max); null while the procedural one is used */
+  weaponModel?(kind: string): { size: number[]; min: number[]; max: number[] } | null;
+  arrows?(): { x: number; y: number; z: number }[];
   camp?(): { kind: string; x: number; z: number; ix: number; iz: number }[];
   colliders?(x: number, z: number, r: number): { tag: string; x: number; z: number; r: number; top: number }[];
   harvestables?(kind: string): { id: number; x: number; z: number; scale: number }[];

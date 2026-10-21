@@ -4,6 +4,7 @@ import { Loop } from '../core/Loop';
 import { RenderPipeline, createRenderer, isSoftwareRenderer, type Quality } from '../core/Renderer';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { MaterialLibrary } from '../assets/Materials';
+import { loadWeaponModels } from '../assets/WeaponModels';
 import { Enemy, type EnemyContext, type ShotRequest } from '../entities/Enemy';
 import { Npc } from '../entities/Npc';
 import { SPECIES, Wildlife, type Animal } from '../entities/Wildlife';
@@ -174,7 +175,9 @@ export class Game {
     // wildlife: gazelles, boars and hares of the wilds, each carcass can be skinned
     this.wildlife = new Wildlife(this.world.terrain, this.world.collision);
     this.scene.add(this.wildlife.group);
-    this.scene.add(this.bolts.mesh);
+    this.scene.add(this.bolts.mesh, this.arrows.mesh);
+    // generated weapon models, when assets/models/manifest.json lists any
+    void loadWeaponModels().then((models) => models.forEach((m, kind) => this.player.rig.useModel(kind, m)));
     this.camp = new Camp(this.world.terrain, this.world.collision);
     this.scene.add(this.camp.group);
     // traders: the souk's merchants behind their counters, and the nomads at their camp
@@ -608,11 +611,13 @@ export class Game {
         playerDead: this.player.dead || this.state === 'title',
       });
       this.syncCarcasses();
-      const got = this.bolts.update(sim, this.player.pos);
-      if (got > 0 && !this.player.dead) {
-        this.player.inventory.bolt += got;
-        this.audio.pickup();
-        this.hud.toast(t('msg.boltBack', { n: got }), 'good');
+      for (const drops of [this.bolts, this.arrows]) {
+        const got = drops.update(sim, this.player.pos);
+        if (got > 0 && !this.player.dead) {
+          this.player.inventory[drops.kind] += got;
+          this.audio.pickup();
+          this.hud.toast(t(drops.kind === 'arrow' ? 'msg.arrowBack' : 'msg.boltBack', { n: got }), 'good');
+        }
       }
       this.camp.update(this.elapsed);
       for (const n of this.npcs) {
@@ -699,7 +704,7 @@ export class Game {
     const p = this.player;
     const i = this.input;
     if (p.dead) return;
-    const slotKeys = ['weapon1', 'weapon2', 'weapon3', 'weapon4', 'weapon5', 'weapon6', 'weapon7', 'weapon8'] as const;
+    const slotKeys = ['weapon1', 'weapon2', 'weapon3', 'weapon4', 'weapon5', 'weapon6', 'weapon7', 'weapon8', 'weapon9'] as const;
     slotKeys.forEach((k, idx) => {
       if (!i.wasPressed(k)) return;
       const w = WEAPON_ORDER[idx];
@@ -846,8 +851,8 @@ export class Game {
     spread += Math.min(1, p.moveSpeed / 4) * 0.03;
     spread *= 1 - p.skills.marksman * 0.12;
     const muzzle = p.rig.muzzleWorld(new THREE.Vector3());
-    // sling and crossbow: no flash, no tracer
-    const sling = p.weapon === 'sling' || p.weapon === 'crossbow';
+    // sling, crossbow and bow: no flash, no tracer
+    const sling = p.weapon === 'sling' || p.weapon === 'crossbow' || p.weapon === 'bow';
     if (!sling) this.vfx.muzzle(muzzle, aimDir);
     const hits = new Map<Enemy, { dmg: number; head: boolean }>();
     const animalHits = new Map<Animal, number>();
@@ -891,7 +896,7 @@ export class Game {
       }
       const hitPoint = origin.clone().addScaledVector(dir, hitT);
       if (k < 3 && !sling) this.vfx.tracer(muzzle, hitPoint);
-      if (p.weapon === 'crossbow') this.landBolt(hitPoint, dir, hitT < range, hitEnemy?.pos ?? hitAnimal?.pos ?? null);
+      if (p.weapon === 'crossbow' || p.weapon === 'bow') this.landBolt(p.weapon === 'bow' ? this.arrows : this.bolts, hitPoint, dir, hitT < range, hitEnemy?.pos ?? hitAnimal?.pos ?? null);
       if (hitAnimal) {
         const fall = clamp(1.4 - hitT / range, 0.45, 1);
         animalHits.set(hitAnimal, (animalHits.get(hitAnimal) ?? 0) + gun.damage * fall * (1 + p.skills.hunter * 0.2) * (1 + p.skills.marksman * 0.12));
@@ -927,27 +932,27 @@ export class Game {
   }
 
   /**
-   * A shot bolt ends up somewhere you can fetch it: stuck where it struck, lying
-   * by the man or beast it hit, or in the dirt where it came down. One in six
-   * snaps on stone or bone.
+   * A shot bolt or arrow ends up somewhere you can fetch it: stuck where it struck,
+   * lying by the man or beast it hit, or in the dirt where it came down. One in
+   * six snaps on stone or bone.
    */
-  private landBolt(hitPoint: THREE.Vector3, dir: THREE.Vector3, struck: boolean, body: THREE.Vector3 | null): void {
+  private landBolt(drops: BoltDrops, hitPoint: THREE.Vector3, dir: THREE.Vector3, struck: boolean, body: THREE.Vector3 | null): void {
     if (this.rng() < (body ? 0.25 : 0.15)) return;
     const terrain = this.world.terrain;
     if (body) {
       const x = body.x + dir.x * 0.4;
       const z = body.z + dir.z * 0.4;
-      this.bolts.drop(this.tmpA.set(x, terrain.getHeight(x, z) + 0.05, z), this.tmpB.set(dir.x, -0.7, dir.z).normalize());
+      drops.drop(this.tmpA.set(x, terrain.getHeight(x, z) + 0.05, z), this.tmpB.set(dir.x, -0.7, dir.z).normalize());
       return;
     }
     if (struck) {
-      this.bolts.drop(hitPoint, dir);
+      drops.drop(hitPoint, dir);
       return;
     }
     // spent at full range: it comes down in the dirt
     const x = hitPoint.x;
     const z = hitPoint.z;
-    this.bolts.drop(this.tmpA.set(x, terrain.getHeight(x, z) + 0.02, z), this.tmpB.set(dir.x, -0.8, dir.z).normalize());
+    drops.drop(this.tmpA.set(x, terrain.getHeight(x, z) + 0.02, z), this.tmpB.set(dir.x, -0.8, dir.z).normalize());
   }
 
   // ================================================================ trade
@@ -1301,7 +1306,8 @@ export class Game {
   private lastLookAt = -99;
   /** test hook: soldiers treat the player as gone */
   private ceasefire = false;
-  private readonly bolts = new BoltDrops();
+  private readonly bolts = new BoltDrops('bolt');
+  private readonly arrows = new BoltDrops('arrow');
   private camp!: Camp;
   /** the trader whose stall is open in the panel ('' = none) */
   private tradeWith = '';
@@ -2485,6 +2491,8 @@ export class Game {
           .map((c) => ({ tag: c.tag ?? c.kind, x: c.x, z: c.z, r: c.kind === 'circle' ? c.r : Math.max(c.hx, c.hz), top: c.y1 })),
       save: () => this.saveNow(false).then(() => this.saves.backend),
       bolts: () => this.bolts.positions(),
+      weaponModel: (kind: string) => this.player.rig.modelFit(kind),
+      arrows: () => this.arrows.positions(),
       camp: () => this.camp.pieces.map((c) => ({ kind: c.kind, x: c.x, z: c.z, ix: c.it.pos.x, iz: c.it.pos.z })),
       rides: () => this.rides.rides.map((r) => ({ kind: r.kind, x: r.pos.x, y: r.pos.y, z: r.pos.z, speed: r.speed, flying: r.flying, crashed: r.crashed, reason: r.crashReason, yaw: r.yaw, pitch: r.pitch, roll: r.roll, gamma: r.gamma, beta: r.beta, stalled: r.stalled })),
       ceasefire: (on: boolean) => {

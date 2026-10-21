@@ -66,7 +66,7 @@ export class Player {
 
   weapon: Weapon = 'blade';
   readonly owned = new Set<WeaponId>(['blade', 'rifle']);
-  readonly clips: Record<WeaponId, number> = { blade: 0, rifle: 3, pistol: 0, musket: 0, smg: 0, sling: 0, shotgun: 0, crossbow: 0 };
+  readonly clips: Record<WeaponId, number> = { blade: 0, rifle: 3, pistol: 0, musket: 0, smg: 0, sling: 0, shotgun: 0, crossbow: 0, bow: 0 };
   readonly upgrades = new Set<Upgrade>();
   meleeT = -1;
   meleeHitDone = false;

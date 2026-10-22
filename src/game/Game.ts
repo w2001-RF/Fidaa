@@ -7,7 +7,8 @@ import { MaterialLibrary } from '../assets/Materials';
 import { loadWeaponModels } from '../assets/WeaponModels';
 import { Enemy, type EnemyContext, type ShotRequest } from '../entities/Enemy';
 import { Npc } from '../entities/Npc';
-import { SPECIES, Wildlife, type Animal } from '../entities/Wildlife';
+import { HeroModel } from '../entities/HeroModel';
+import { SPECIES, Wildlife, type Animal, type Species as AnimalSpecies } from '../entities/Wildlife';
 import { RIDES, Rides, type Ride, type RideKind, type Body, type PlaneControls } from '../entities/Rides';
 import { Player, type Skill } from '../entities/Player';
 import { AudioSystem } from '../systems/Audio';
@@ -21,6 +22,8 @@ import { NavGrid } from '../world/NavGrid';
 import { Sky } from '../world/Sky';
 import { Vegetation, type Harvestable } from '../world/Vegetation';
 import { World } from '../world/World';
+import { Frontier } from '../world/Frontier';
+import { LIMIT, RING_OUT } from '../world/Lands';
 import { LAKE, zone, DOUAR_STRIP } from '../world/layout';
 import { L, lang, onLangChange, setLang, t, tr, trAlt, type Lang } from '../i18n';
 import { ITEMS, RECIPES, SKILL_MAX, WEAPONS, WEAPON_ORDER, emptyInventory, type Recipe, type WeaponId, type CampKind } from './Items';
@@ -39,6 +42,8 @@ const NO_CONTROLS = { f: false, b: false, l: false, r: false, boost: false, up: 
 /** Map fog-of-war grid over the ±250 m map extent. */
 const FOG_N = 96;
 const FOG_EXTENT = 250;
+/** Fog of war over the whole lands (±LIMIT) for the region map: 16 m cells. */
+const FFOG_N = 200;
 
 export class Game {
   private readonly renderer: THREE.WebGLRenderer;
@@ -107,6 +112,17 @@ export class Game {
   /** Landmark and zone ids the player has found. */
   private readonly discovered = new Set<string>();
   readonly fog = new Uint8Array(FOG_N * FOG_N);
+  /** the region map's fog, over the lands beyond the valley too */
+  readonly ffog = new Uint8Array(FFOG_N * FFOG_N);
+  /** the procedurally generated lands beyond the valley, streamed around the player */
+  private readonly frontier: Frontier;
+  private migrateT = 0;
+  private edgeToastAt = -99;
+  /** the Tripo-generated fidāʾī, shown while the player simply stands or walks */
+  private hero: HeroModel | null = null;
+  private heroHold = 0;
+  /** the weapon the hero carries (copied from the rig when it changes) */
+  private heroWeapon = '';
   private exploreT = 0;
   private readonly software: boolean;
   private autoFireT = 0;
@@ -153,6 +169,11 @@ export class Game {
 
     // characters
     this.scene.add(this.player.group);
+    void HeroModel.load().then((h) => {
+      if (!h) return;
+      this.hero = h;
+      this.scene.add(h.root);
+    });
     this.player.onFootstep = (loud) => this.onFootstep(loud);
     for (const s of this.world.enemySpawns) {
       const e = new Enemy(s);
@@ -233,6 +254,23 @@ export class Game {
 
     this.map = new MapView(this.world.terrain);
 
+    // the lands beyond the passes: generated around the player as they go
+    this.frontier = new Frontier(this.world.terrain, this.world.collision, this.veg, this.lib, this.world.interactables, this.world.lightPoints);
+    this.scene.add(this.frontier.group);
+    this.frontier.onLow = (ci, cj, h, c) => this.map.paintChunk(ci, cj, h, c);
+    this.frontier.onNpcIn = (s) => {
+      if (this.npcs.some((n) => n.spawn.id === s.id)) return;
+      const n = new Npc(s);
+      this.npcs.push(n);
+      this.scene.add(n.rig.root);
+    };
+    this.frontier.onNpcOut = (id) => {
+      const i = this.npcs.findIndex((n) => n.spawn.id === id);
+      if (i < 0) return;
+      this.scene.remove(this.npcs[i].rig.root);
+      this.npcs.splice(i, 1);
+    };
+
     this.ctx = {
       terrain: this.world.terrain,
       collision: this.world.collision,
@@ -302,7 +340,14 @@ export class Game {
       this.audio.ui();
       fn();
     });
-    on('#btn-start', () => this.beginPlay());
+    on('#btn-start', () => {
+      this.newWorld(this.freshSeed());
+      this.beginPlay();
+    });
+    on('#map-mode', () => {
+      this.map.mode = this.map.mode === 'region' ? 'valley' : 'region';
+      this.drawMap();
+    });
     on('#btn-continue-save', () => {
       const data = this.pendingSave;
       this.beginPlay();
@@ -468,6 +513,8 @@ export class Game {
       this.renderPanel();
     } else {
       document.querySelector('#map-screen')?.classList.remove('hidden');
+      const p = this.player.pos;
+      this.map.mode = Math.max(Math.abs(p.x), Math.abs(p.z)) > 240 ? 'region' : 'valley';
       this.drawMap();
     }
   }
@@ -511,6 +558,17 @@ export class Game {
 
   private drawMap(): void {
     const obj = this.objectiveTarget();
+    const mode = document.querySelector('#map-mode');
+    if (mode) mode.textContent = t(this.map.mode === 'region' ? 'map.valley' : 'map.region');
+    if (this.map.mode === 'region') {
+      const sites = [...this.discovered].flatMap((id) => {
+        const s = id.startsWith('s:') ? this.world.terrain.lands.siteById(id) : null;
+        return s ? [{ x: s.x, z: s.z, name: s.name, kind: s.kind }] : [];
+      });
+      const lms = this.world.landmarks.filter((l) => this.discovered.has(l.id)).map((l) => ({ x: l.x, z: l.z, name: l.name }));
+      this.map.drawRegion({ x: this.player.pos.x, z: this.player.pos.z, yaw: this.player.yaw }, obj ? { x: obj.x, z: obj.z } : null, this.ffog, FFOG_N, sites, lms);
+      return;
+    }
     const foes = this.enemies.filter((e) => e.alive && e.state === 'alert').map((e) => ({ x: e.pos.x, z: e.pos.z }));
     const marks = this.world.landmarks.filter((l) => this.discovered.has(l.id)).map((l) => ({ x: l.x, z: l.z, name: l.name }));
     this.map.draw({ x: this.player.pos.x, z: this.player.pos.z, yaw: this.player.yaw }, obj ? { x: obj.x, z: obj.z } : null, this.world.hideout, foes, this.fog, FOG_N, marks);
@@ -555,6 +613,7 @@ export class Game {
       } else {
         this.player.update(sim, this.input, this.camRig.yaw, this.world.terrain, this.world.collision, blocked, this.gameTime);
         this.pushPlayerFromBodies();
+        this.keepInsideLands(this.player.pos);
         // deep water: the lake is crossed by boat, not on foot
         const lx = this.player.pos.x - LAKE.x;
         const lz = this.player.pos.z - LAKE.z;
@@ -620,6 +679,7 @@ export class Game {
         }
       }
       this.camp.update(this.elapsed);
+      this.migrateWildlife(sim);
       for (const n of this.npcs) {
         n.rig.root.visible = !n.fled && n.pos.distanceTo(this.camera.position) < 110;
         n.update(sim, this.world.terrain, this.world.collision, this.player.pos);
@@ -641,12 +701,14 @@ export class Game {
       this.camRig.lookBack = this.input.isHeld('lookBack');
     } else this.camRig.lookBack = false;
     this.camRig.update(dt, this.player.pos, this.player.crouchAmt, this.player.aimAmt, this.player.sprinting, this.world.collision, this.world.terrain);
+    this.updateHero(dt);
     this.sky.update(this.player.pos, this.camera);
     this.renderer.toneMappingExposure = this.sky.exposure;
     this.scene.environmentIntensity = 0.35 * (1 - this.sky.night * 0.85);
     this.lib.setNightFactor(this.sky.night);
     this.updateLights(dt);
     this.veg.update(this.reducedMotion ? 0 : this.elapsed, this.camera.position);
+    this.frontier.update(dt, this.riding ? this.riding.pos : this.player.pos);
     this.world.update(this.reducedMotion ? 0 : this.elapsed);
     this.vfx.update(dt, this.elapsed, this.sky.night);
     const obj = this.objectiveTarget();
@@ -965,7 +1027,7 @@ export class Game {
 
   /** Smugglers (the souk's first merchant, the nomads) also deal in powder, cartridges and guns. */
   private smuggler(trader: string): boolean {
-    return trader === 'merchant-0' || trader === 'nomad-trader';
+    return trader === 'merchant-0' || trader === 'nomad-trader' || trader.startsWith('frontier-nomad-');
   }
 
   private tradeBuy(w: Ware): void {
@@ -1109,6 +1171,8 @@ export class Game {
         discovered: [...this.discovered],
         fog: packBits(this.fog),
         harvested: this.veg.harvestables.filter((h) => h.done).map((h) => h.id),
+        frontier: this.frontier.serialize(),
+        frontierFog: packBits(this.ffog),
         camp: this.camp.pieces.map((c) => ({ kind: c.kind, x: c.x, z: c.z, yaw: c.yaw })),
         prisonOpened: this.prisonOpened,
         carrying: this.carrying,
@@ -1173,8 +1237,12 @@ export class Game {
     }
     this.carrying = d.world.carrying;
     this.carryCrate.visible = this.carrying;
+    const f = d.world.frontier;
+    this.newWorld(f?.seed ?? 1945, f?.harvested ?? [], f?.searched ?? []);
     for (const id of d.world.discovered) this.discovered.add(id);
     if (d.world.fog) unpackBits(d.world.fog, this.fog);
+    if (d.world.frontierFog) unpackBits(d.world.frontierFog, this.ffog);
+    else this.ffogFromValley();
     for (const c of d.world.camp ?? []) {
       if (this.camp.pieces.some((q) => q.kind === c.kind && Math.hypot(q.x - c.x, q.z - c.z) < 0.5)) continue;
       this.world.interactables.push(this.camp.place(c.kind as CampKind, c.x, c.z, c.yaw).it);
@@ -1701,6 +1769,7 @@ export class Game {
         const h = this.harvestRef;
         if (!h || h.done) break;
         this.veg.harvest(h);
+        this.frontier.markHarvested(h);
         let loot: LootBundle;
         if (h.kind === 'tree') {
           const big = h.scale > 1.05 ? 1 : 0;
@@ -1709,8 +1778,10 @@ export class Game {
           this.vfx.impact(this.tmpA.set(h.x, h.y + 1, h.z), 'dust', 10);
         } else {
           // galena lies in the hills around the old lead mine
+          // out in the lands the ground decides (the badlands are rich); in the valley, the old mine
           const nearMine = Math.hypot(h.x - 196, h.z + 38) < 70;
-          const ore = this.rng() < (nearMine ? 0.85 : 0.3) ? 1 + (nearMine && this.rng() < 0.5 ? 1 : 0) : 0;
+          const chance = h.ore ?? (nearMine ? 0.85 : 0.3);
+          const ore = this.rng() < chance ? 1 + (chance > 0.6 && this.rng() < 0.5 ? 1 : 0) : 0;
           loot = { stone: 2 + Math.round(h.scale), ...(ore ? { ore } : {}) };
           this.audio.quarry();
           this.vfx.impact(this.tmpA.set(h.x, h.y + h.scale * 0.6, h.z), 'spark', 8);
@@ -2128,6 +2199,15 @@ export class Game {
       this.hud.showBanner(t('banner.discovered'), tr(l.name), trAlt(l.name), 3000);
       this.giveXp(l.xp, t('xp.discover'));
     }
+    if (Math.hypot(p.x, p.z) < RING_OUT) return;
+    for (const s of this.world.terrain.lands.sitesNear(p.x, p.z, 60)) {
+      if (this.discovered.has(s.id) || Math.hypot(s.x - p.x, s.z - p.z) > s.r + 16) continue;
+      this.discovered.add(s.id);
+      this.revealFog(s.x, s.z, 90);
+      this.audio.discover();
+      this.hud.showBanner(t('banner.discovered'), tr(s.name), trAlt(s.name), 3000);
+      this.giveXp(20, t('xp.discover'));
+    }
   }
 
   revealFog(x: number, z: number, r: number): void {
@@ -2142,6 +2222,119 @@ export class Game {
         if (dx * dx + dz * dz <= r * r) this.fog[j * FOG_N + i] = 1;
       }
     }
+    // the region map's coarser fog over the whole lands
+    const fc = (LIMIT * 2) / FFOG_N;
+    const fx = Math.floor((x + LIMIT) / fc);
+    const fz = Math.floor((z + LIMIT) / fc);
+    const fr = Math.ceil(r / fc);
+    for (let j = Math.max(0, fz - fr); j <= Math.min(FFOG_N - 1, fz + fr); j += 1) {
+      for (let i = Math.max(0, fx - fr); i <= Math.min(FFOG_N - 1, fx + fr); i += 1) {
+        const dx = (i + 0.5) * fc - LIMIT - x;
+        const dz = (j + 0.5) * fc - LIMIT - z;
+        if (dx * dx + dz * dz <= r * r) this.ffog[j * FFOG_N + i] = 1;
+      }
+    }
+  }
+
+  /** Saves from before the lands existed: the region fog follows the valley map's. */
+  private ffogFromValley(): void {
+    const cell = (FOG_EXTENT * 2) / FOG_N;
+    for (let j = 0; j < FOG_N; j += 1) {
+      for (let i = 0; i < FOG_N; i += 1) {
+        if (this.fog[j * FOG_N + i]) this.revealFog((i + 0.5) * cell - FOG_EXTENT, (j + 0.5) * cell - FOG_EXTENT, cell * 0.8);
+      }
+    }
+  }
+
+  /**
+   * A new world: the lands beyond the passes are regenerated from `seed`
+   * (felled trees and searched jars from a save of that world kept), the
+   * region map starts blank but for the valley.
+   */
+  private newWorld(seed: number, harvested: string[] = [], searched: string[] = []): void {
+    const changed = seed !== this.frontier.seed;
+    this.frontier.reset(seed, harvested, searched);
+    if (!changed) return;
+    this.map.clearRegion();
+    this.ffog.fill(0);
+    for (const id of [...this.discovered]) if (id.startsWith('s:')) this.discovered.delete(id);
+    this.ffogFromValley();
+  }
+
+  /** A new game's world seed: ?seed=N, the fixed test world, or a random one. */
+  private freshSeed(): number {
+    const q = new URLSearchParams(window.location.search);
+    const s = Number(q.get('seed'));
+    if (q.has('seed') && Number.isFinite(s)) return s >>> 0;
+    if (q.has('test')) return 1945;
+    const a = new Uint32Array(1);
+    crypto.getRandomValues(a);
+    return a[0] || 1;
+  }
+
+  /**
+   * The generated fidāʾī has only idle and walk animations: it stands in while the
+   * player is simply standing or walking about, and the procedural rig (with its
+   * aiming, crouching, fighting, riding and dying poses) takes over for the rest.
+   */
+  private updateHero(dt: number): void {
+    const h = this.hero;
+    if (!h) return;
+    const p = this.player;
+    const firing = this.state === 'playing' && this.input.isHeld('attack');
+    const calm =
+      !p.dead && !this.riding && !this.camRig.firstPerson && !this.carrying && !firing && p.crouchAmt < 0.05 && p.aimAmt < 0.03 && p.meleeT < 0 && p.reloadT < 0 && p.interactT === 0;
+    // a moment's grace after fighting, so the two never flicker
+    this.heroHold = calm ? Math.max(0, this.heroHold - dt) : 0.35;
+    const show = this.heroHold <= 0;
+    p.rig.root.visible = !show;
+    // he carries what the rig holds: knife, pistol and sling in hand, long guns and the bow slung
+    const held = p.weapon === 'blade' ? p.rig.blade : p.rig.rifle;
+    const key = `${p.weapon}:${held?.name ?? ''}:${held?.userData.custom ? 'model' : ''}`;
+    if (key !== this.heroWeapon) {
+      this.heroWeapon = key;
+      const copy = held ? held.clone(true) : null;
+      if (copy) {
+        copy.position.set(0, 0, 0);
+        copy.rotation.set(0, 0, 0);
+      }
+      h.hold(copy, p.weapon === 'blade' || p.weapon === 'pistol' || p.weapon === 'sling' ? 'hand' : 'back');
+    }
+    h.update(dt, p.pos, p.yaw, p.moveSpeed, show);
+  }
+
+  /** The great erg past the edge of the lands turns travellers back. */
+  private keepInsideLands(pos: THREE.Vector3): void {
+    const edge = LIMIT - 25;
+    if (Math.abs(pos.x) <= edge && Math.abs(pos.z) <= edge) return;
+    pos.x = clamp(pos.x, -edge, edge);
+    pos.z = clamp(pos.z, -edge, edge);
+    pos.y = Math.max(pos.y, this.world.terrain.getHeight(pos.x, pos.z));
+    if (this.elapsed - this.edgeToastAt > 6) {
+      this.edgeToastAt = this.elapsed;
+      this.hud.toast(t('msg.edge'), 'bad');
+    }
+  }
+
+  /**
+   * Out in the lands, game drifts in from far away: an animal the player left
+   * far behind reappears on open ground nearby, a species that suits the ground.
+   */
+  private migrateWildlife(dt: number): void {
+    this.migrateT -= dt;
+    if (this.migrateT > 0) return;
+    this.migrateT = 3;
+    const p = this.player.pos;
+    if (Math.hypot(p.x, p.z) < RING_OUT + 40) return;
+    if (this.wildlife.animals.filter((a) => a.state !== 'dead' && a.pos.distanceTo(p) < 170).length >= 7) return;
+    const biome = this.world.terrain.lands.biome(p.x, p.z);
+    const roll = this.rng();
+    const want: AnimalSpecies = biome === 'forest' || biome === 'badlands' ? (roll < 0.5 ? 'boar' : 'hare') : biome === 'erg' ? (roll < 0.3 ? 'gazelle' : 'hare') : roll < 0.65 ? 'gazelle' : 'hare';
+    const far = (a: Animal) => a.pos.distanceTo(p) > 320 && (a.state !== 'dead' || a.skinned);
+    const a = this.wildlife.animals.find((x) => x.species === want && far(x)) ?? this.wildlife.animals.find(far);
+    if (!a) return;
+    const spot = this.frontier.openGround(60, 150, this.rng);
+    if (spot) this.wildlife.relocate(a, spot);
   }
 
   private updateLights(dt: number): void {
@@ -2491,6 +2684,15 @@ export class Game {
           .map((c) => ({ tag: c.tag ?? c.kind, x: c.x, z: c.z, r: c.kind === 'circle' ? c.r : Math.max(c.hx, c.hz), top: c.y1 })),
       save: () => this.saveNow(false).then(() => this.saves.backend),
       bolts: () => this.bolts.positions(),
+      frontier: () => this.frontier.stats(),
+      hero: () => (this.hero ? { shown: this.hero.root.visible, state: this.hero.state, clips: this.hero.clips } : null),
+      newWorld: (seed: number) => this.newWorld(seed),
+      sites: (x: number, z: number, r: number) =>
+        this.world.terrain.lands.sitesNear(x, z, r).map((s) => ({ id: s.id, kind: s.kind, x: s.x, z: s.z, r: s.r, name: s.name.en, biome: s.biome })),
+      ground: (x: number, z: number) => this.world.terrain.getHeight(x, z),
+      mapMode: (m: 'valley' | 'region') => {
+        this.map.mode = m;
+      },
       weaponModel: (kind: string) => this.player.rig.modelFit(kind),
       arrows: () => this.arrows.positions(),
       camp: () => this.camp.pieces.map((c) => ({ kind: c.kind, x: c.x, z: c.z, ix: c.it.pos.x, iz: c.it.pos.z })),

@@ -56,6 +56,24 @@ interface ThreeGameTestHooks {
   pilot?(x: number, alt: number, z: number, yaw: number, speed: number, flaps?: number): void;
   save?(): Promise<string>;
   bolts?(): { x: number; y: number; z: number }[];
+  /** the streamed lands beyond the valley */
+  frontier?(): {
+    seed: number;
+    live: number;
+    generated: number;
+    pending: number;
+    horizon: number;
+    trees: number;
+    rocks: number;
+    resources: Record<string, number>;
+    sites: { id: string; kind: string; x: number; z: number; name: string }[];
+  };
+  newWorld?(seed: number): void;
+  /** the generated fidāʾī: whether it stands in for the procedural rig, and its clip */
+  hero?(): { shown: boolean; state: 'idle' | 'walk'; clips: string[] } | null;
+  sites?(x: number, z: number, r: number): { id: string; kind: string; x: number; z: number; r: number; name: string; biome: string }[];
+  ground?(x: number, z: number): number;
+  mapMode?(m: 'valley' | 'region'): void;
   /** where a loaded weapon model sits in gun space (size, min, max); null while the procedural one is used */
   weaponModel?(kind: string): { size: number[]; min: number[]; max: number[] } | null;
   arrows?(): { x: number; y: number; z: number }[];

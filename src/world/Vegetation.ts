@@ -6,7 +6,7 @@ import type { CollisionWorld } from './Collision';
 import { OUED, PLAY_RADIUS, ZONES, distToPolyline, distToRoads, reserved, zone } from './layout';
 import type { Terrain } from './Terrain';
 
-type Species = 'palm' | 'olive' | 'argan' | 'cactus' | 'rock' | 'scrub';
+export type Species = 'palm' | 'olive' | 'argan' | 'cactus' | 'rock' | 'scrub';
 
 /** A tree that can be felled or a rock that can be quarried. */
 export type Harvestable = {
@@ -21,12 +21,16 @@ export type Harvestable = {
   refs: { mesh: THREE.InstancedMesh; index: number }[];
   collider?: { enabled: boolean };
   cover?: { r: number };
+  /** frontier trees and rocks: a stable id across sessions (the valley's use their index) */
+  key?: string;
+  /** chance a quarried rock gives ore (default by distance to the old mine) */
+  ore?: number;
 };
 
 const HARVEST_CELL = 8;
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 
-type Part = { geometry: THREE.BufferGeometry; lo?: THREE.BufferGeometry; material: THREE.Material; shadow: boolean };
+export type Part = { geometry: THREE.BufferGeometry; lo?: THREE.BufferGeometry; material: THREE.Material; shadow: boolean };
 
 /** Beyond this distance chunks swap to low-detail geometry and stop casting shadows. */
 const LOD_DIST = 75;
@@ -46,7 +50,8 @@ export class Vegetation {
   private readonly harvestGrid = new Map<string, Harvestable[]>();
   private readonly swayMaterials: THREE.MeshStandardMaterial[] = [];
   private readonly chunks: { center: THREE.Vector3; meshes: THREE.InstancedMesh[]; maxDist: number }[] = [];
-  private readonly parts: Record<Species, Part[]>;
+  /** Shared per-species geometry and materials (the frontier instances them too). */
+  readonly parts: Record<Species, Part[]>;
 
   constructor(terrain: Terrain, collision: CollisionWorld) {
     this.group.name = 'vegetation';
@@ -118,6 +123,23 @@ export class Vegetation {
       }
     }
     return best;
+  }
+
+  /** A tree or rock that appears later (the streamed frontier): reachable by nearestHarvestable. */
+  addHarvestable(h: Harvestable): void {
+    const key = `${Math.floor(h.x / HARVEST_CELL)}:${Math.floor(h.z / HARVEST_CELL)}`;
+    const cell = this.harvestGrid.get(key);
+    if (cell) cell.push(h);
+    else this.harvestGrid.set(key, [h]);
+  }
+
+  /** Forget every frontier tree and rock (a new world is being generated). */
+  dropKeyed(): void {
+    for (const [k, cell] of this.harvestGrid) {
+      const kept = cell.filter((h) => h.key === undefined);
+      if (kept.length) this.harvestGrid.set(k, kept);
+      else this.harvestGrid.delete(k);
+    }
   }
 
   /** Fell a tree / break up a rock: its instances vanish, its collider and cover go with it. */

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { L, type Text } from '../i18n';
 import { clamp } from '../utils/noise';
 import type { CollisionWorld } from '../world/Collision';
+import { LIMIT } from '../world/Lands';
 import { AIRSTRIP, LAKE, RAIL_LENGTH, distToRoads, railAt, stripAt, zone } from '../world/layout';
 import type { Terrain } from '../world/Terrain';
 import { buildPart as part, mergeParts as merge } from './Wildlife';
@@ -543,10 +544,10 @@ private updateGround(r: Ride, dt: number, c: Controls | null): void {
         r.slip = wx * nfz - wz * nfx;
       }
     }
-    // no wading into the lake, no climbing cliffs, stay inside the mountains
+    // no wading into the lake, no climbing cliffs, not past the edge of the lands
     const tooSteep = this.terrain.getSlope(r.pos.x, r.pos.z) > (car ? 0.9 : 1.15);
     const wet = Math.hypot(r.pos.x - LAKE.x, r.pos.z - LAKE.z) < LAKE.water - 0.5;
-    if (tooSteep || wet || Math.hypot(r.pos.x, r.pos.z) > 228) {
+    if (tooSteep || wet || Math.max(Math.abs(r.pos.x), Math.abs(r.pos.z)) > LIMIT - 25) {
       r.pos.x = ox;
       r.pos.z = oz;
       if (Math.abs(r.speed) > 4) this.onImpact?.(r, Math.abs(r.speed) * 0.6);
@@ -758,8 +759,8 @@ private updateBoat(r: Ride, dt: number, c: Controls | null): void {
     if (aileron === 0) rollRate -= r.roll * 0.12;
     if (r.stalled) rollRate += r.wingDrop * 0.9;
     r.roll = clamp(r.roll + rollRate * dt, -1.3, 1.3);
-    // keep inside the valley: turn back from the mountain wall
-    if (Math.hypot(r.pos.x, r.pos.z) > 236) r.yaw += 1.2 * dt * Math.sign(Math.sin(Math.atan2(-r.pos.x, -r.pos.z) - r.yaw) || 1);
+    // keep inside the lands: turn back from the edge
+    if (Math.max(Math.abs(r.pos.x), Math.abs(r.pos.z)) > LIMIT - 80) r.yaw += 1.2 * dt * Math.sign(Math.sin(Math.atan2(-r.pos.x, -r.pos.z) - r.yaw) || 1);
     if (h > 160 && r.gamma > 0) r.gamma *= 1 - Math.min(1, dt * 2); // the valley's ceiling
     r.vy = r.speed * Math.sin(r.gamma);
     const horiz = r.speed * Math.cos(r.gamma);

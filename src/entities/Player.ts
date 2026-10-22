@@ -216,11 +216,7 @@ export class Player {
     this.pos.z += this.vel.z * dt;
     this.pos.y += this.vy * dt;
     collision.resolveCircle(this.pos, TUNING.radius, this.crouched ? 1.1 : TUNING.height);
-    const r = Math.hypot(this.pos.x, this.pos.z);
-    if (r > 236) {
-      this.pos.x *= 236 / r;
-      this.pos.z *= 236 / r;
-    }
+    // (the mountain ring is left by its passes; the game keeps the player inside the lands' edge)
     // steep slopes push back
     const ground = terrain.getHeight(this.pos.x, this.pos.z);
     if (this.pos.y <= ground) {

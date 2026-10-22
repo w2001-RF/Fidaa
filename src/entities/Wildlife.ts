@@ -5,6 +5,7 @@ import type { LootBundle } from '../game/types';
 import { angleDiff, clamp } from '../utils/noise';
 import { createSeededRandom } from '../utils/random';
 import type { CollisionWorld } from '../world/Collision';
+import { LIMIT, RING_OUT } from '../world/Lands';
 import { ZONES, reserved } from '../world/layout';
 import type { Terrain } from '../world/Terrain';
 
@@ -204,7 +205,9 @@ export class Wildlife {
 
   /** Open ground away from towns, inside the play area, not too steep. */
   private walkable(x: number, z: number): boolean {
-    if (Math.hypot(x, z) > 222) return false;
+    // the valley and the open lands beyond the ring; not the mountain ring itself, not past the edge
+    const r = Math.hypot(x, z);
+    if ((r > 222 && r < RING_OUT + 20) || Math.max(Math.abs(x), Math.abs(z)) > LIMIT - 30) return false;
     for (const zn of ZONES) if (Math.hypot(x - zn.x, z - zn.z) < zn.radius + 12) return false;
     if (this.terrain.getSlope(x, z) > 0.75 || reserved(x, z, -3)) return false;
     return !this.collision.blockedAt(x, z, 0.5, this.terrain.getHeight(x, z));
@@ -351,6 +354,15 @@ export class Wildlife {
     }
     a.pos.y = this.terrain.getHeight(a.pos.x, a.pos.z);
     a.phase += dt * (a.speed * (a.species === 'hare' ? 2.6 : 3.2) + (a.state === 'graze' ? 0.6 : 0));
+  }
+
+  /**
+   * Move an animal (alive, or a skinned carcass) to new grazing ground: the
+   * herds follow the player out into the lands instead of staying in the valley.
+   */
+  relocate(a: Animal, at: THREE.Vector3): void {
+    a.home.copy(at);
+    this.respawn(a);
   }
 
   private respawn(a: Animal): void {

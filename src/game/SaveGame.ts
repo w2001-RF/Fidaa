@@ -32,6 +32,10 @@ export type SaveData = {
     /** fog-of-war bitmap, base64 of packed bits */
     fog?: string;
     harvested?: number[];
+    /** the lands beyond the valley: their seed, felled frontier trees and searched jars */
+    frontier?: { seed: number; harvested: string[]; searched: string[] };
+    /** the region map's fog, packed like `fog` */
+    frontierFog?: string;
     /** the player's camp pieces */
     camp?: { kind: string; x: number; z: number; yaw: number }[];
     prisonOpened: boolean;
@@ -63,7 +67,10 @@ function openDb(): Promise<IDBDatabase | null> {
 function writeCookie(data: SaveData): boolean {
   try {
     // keep the cookie small: no fog, no felled trees
-    const slim: SaveData = { ...data, world: { ...data.world, fog: undefined, harvested: undefined } };
+    const slim: SaveData = {
+      ...data,
+      world: { ...data.world, fog: undefined, harvested: undefined, frontierFog: undefined, frontier: data.world.frontier && { seed: data.world.frontier.seed, harvested: [], searched: [] } },
+    };
     const value = encodeURIComponent(JSON.stringify(slim));
     if (value.length > 3900) return false;
     document.cookie = `${COOKIE}=${value}; max-age=${60 * 60 * 24 * 365}; path=/; SameSite=Lax`;

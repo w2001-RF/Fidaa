@@ -1,8 +1,8 @@
 {
-  "bootMs": 1576,
+  "bootMs": 1644,
   "software": false,
-  "heapStartMB": 112,
-  "heapEndMB": 114,
+  "heapStartMB": 126,
+  "heapEndMB": 110,
   "budget": {
     "calls": 340,
     "triangles": 900000,
@@ -16,144 +16,144 @@
       "p50": 16.699999999999818,
       "p95": 16.800000000000182,
       "worst": 16.800000000000182,
-      "calls": 316,
-      "triangles": 814833,
-      "textures": 85
+      "calls": 317,
+      "triangles": 843924,
+      "textures": 89
     },
     "medina-souk": {
       "frames": 89,
       "p50": 16.699999999999818,
-      "p95": 16.800000000000182,
+      "p95": 16.799999999999727,
       "worst": 16.800000000000182,
-      "calls": 291,
-      "triangles": 754651,
-      "textures": 85
+      "calls": 290,
+      "triangles": 757993,
+      "textures": 89
     },
     "medina-gate": {
       "frames": 89,
       "p50": 16.699999999999818,
       "p95": 16.800000000000182,
       "worst": 16.800000000000182,
-      "calls": 311,
-      "triangles": 778117,
-      "textures": 85
+      "calls": 316,
+      "triangles": 831793,
+      "textures": 89
     },
     "kasbah": {
       "frames": 89,
       "p50": 16.699999999999818,
       "p95": 16.800000000000182,
       "worst": 16.800000000000182,
-      "calls": 317,
-      "triangles": 761625,
-      "textures": 85
+      "calls": 322,
+      "triangles": 812169,
+      "textures": 89
     },
     "post": {
       "frames": 89,
-      "p50": 16.699999999999818,
+      "p50": 16.69999999999891,
       "p95": 16.799999999999272,
       "worst": 16.80000000000109,
-      "calls": 311,
-      "triangles": 714975,
-      "textures": 85
+      "calls": 312,
+      "triangles": 763983,
+      "textures": 89
     },
     "oasis": {
       "frames": 89,
       "p50": 16.69999999999891,
-      "p95": 16.80000000000109,
+      "p95": 16.799999999999272,
       "worst": 16.80000000000109,
       "calls": 307,
-      "triangles": 789446,
-      "textures": 85
+      "triangles": 835979,
+      "textures": 89
     },
     "lm-ruins": {
       "frames": 89,
       "p50": 16.69999999999891,
-      "p95": 16.80000000000109,
+      "p95": 16.799999999999272,
       "worst": 16.80000000000109,
-      "calls": 321,
-      "triangles": 783484,
-      "textures": 85
+      "calls": 322,
+      "triangles": 829347,
+      "textures": 89
     },
     "lm-cave": {
       "frames": 89,
-      "p50": 16.700000000000728,
-      "p95": 16.799999999999272,
+      "p50": 16.69999999999891,
+      "p95": 16.80000000000109,
       "worst": 16.80000000000109,
       "calls": 295,
-      "triangles": 760215,
-      "textures": 85
+      "triangles": 820430,
+      "textures": 89
     },
     "lm-camp": {
       "frames": 89,
       "p50": 16.69999999999891,
       "p95": 16.799999999999272,
       "worst": 16.80000000000109,
-      "calls": 289,
-      "triangles": 736843,
-      "textures": 85
+      "calls": 288,
+      "triangles": 795538,
+      "textures": 89
     },
     "lm-mine": {
       "frames": 89,
-      "p50": 16.69999999999891,
-      "p95": 16.799999999999272,
-      "worst": 16.80000000000291,
-      "calls": 281,
-      "triangles": 718289,
-      "textures": 85
+      "p50": 16.700000000000728,
+      "p95": 16.700000000000728,
+      "worst": 16.799999999999272,
+      "calls": 283,
+      "triangles": 738437,
+      "textures": 89
     },
     "lm-press": {
       "frames": 89,
       "p50": 16.700000000000728,
       "p95": 16.799999999999272,
       "worst": 16.80000000000291,
-      "calls": 324,
-      "triangles": 824476,
-      "textures": 85
+      "calls": 327,
+      "triangles": 884896,
+      "textures": 89
     },
     "lm-convoy": {
       "frames": 89,
       "p50": 16.700000000000728,
       "p95": 16.799999999999272,
       "worst": 16.80000000000291,
-      "calls": 332,
-      "triangles": 818370,
-      "textures": 85
+      "calls": 335,
+      "triangles": 878310,
+      "textures": 89
     },
     "lm-lookout": {
       "frames": 89,
       "p50": 16.700000000000728,
       "p95": 16.799999999999272,
       "worst": 16.80000000000291,
-      "calls": 318,
-      "triangles": 788967,
-      "textures": 85
+      "calls": 299,
+      "triangles": 667894,
+      "textures": 89
     },
     "lm-fidai-cache": {
       "frames": 89,
       "p50": 16.700000000000728,
       "p95": 16.799999999999272,
-      "worst": 16.799999999999272,
-      "calls": 317,
-      "triangles": 602642,
-      "textures": 85
+      "worst": 16.80000000000291,
+      "calls": 316,
+      "triangles": 631524,
+      "textures": 89
     },
     "lm-ksar": {
       "frames": 89,
       "p50": 16.700000000000728,
-      "p95": 16.799999999999272,
+      "p95": 16.700000000000728,
       "worst": 16.80000000000291,
-      "calls": 313,
-      "triangles": 675082,
-      "textures": 85
+      "calls": 312,
+      "triangles": 719530,
+      "textures": 89
     },
     "firefight": {
       "frames": 239,
       "p50": 16.700000000000728,
       "p95": 16.799999999999272,
       "worst": 16.80000000000291,
-      "calls": 299,
-      "triangles": 660082,
-      "textures": 85
+      "calls": 304,
+      "triangles": 674170,
+      "textures": 89
     }
   }
 }

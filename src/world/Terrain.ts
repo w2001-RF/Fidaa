@@ -1,54 +1,119 @@
 import * as THREE from 'three';
 import { Noise2D, PeriodicNoise, clamp, lerp, smoothstep } from '../utils/noise';
+import { CHUNK, CHUNK_SEG, Lands, RING_IN, RING_OUT, chunkKey, passWeight, trackDist } from './Lands';
 import { LAKE, OUED, PLAY_RADIUS, RAIL, STRIPS, WORLD_HALF, ZONES, distToPolyline, distToRoads, distToStrip, zone } from './layout';
 
 const SEGMENTS = 256;
 const CELL = (WORLD_HALF * 2) / SEGMENTS;
+const N = SEGMENTS + 1;
+/** Frontier chunk vertices per side. */
+const CN = CHUNK_SEG + 1;
+const CCELL = CHUNK / CHUNK_SEG;
 
 /**
  * Heightfield terrain. The mesh and getHeight() share one grid with the same
  * triangle split, so characters stand exactly on the rendered surface.
+ *
+ * The authored valley is one 640 m heightfield. Beyond it the ground is the
+ * seeded Lands function, sampled on the same 2.5 m grid: streamed chunks
+ * register their heights here, and anywhere not yet streamed is sampled on the
+ * fly, so getHeight() is defined (and identical to what will be drawn) everywhere.
  */
 export class Terrain {
   readonly mesh: THREE.Mesh;
+  /** A curtain hanging from the valley heightfield's edge, hiding cracks against the coarser horizon beyond. */
+  readonly skirt: THREE.Mesh;
   readonly water: THREE.Mesh;
   readonly lakeWater: THREE.Mesh;
+  lands = new Lands(1945);
   /** natural ground height at each rail vertex: the track is graded linearly between them */
   private railGrade: number[] = [];
   private readonly heights: Float32Array;
   private readonly noise = new Noise2D(1945);
   private readonly detail = new Noise2D(56);
+  /** Heights of streamed frontier chunks (CN×CN each), by chunk key. */
+  private readonly chunks = new Map<number, Float32Array>();
 
   constructor() {
-    const n = SEGMENTS + 1;
-    this.heights = new Float32Array(n * n);
-    for (let j = 0; j < n; j += 1) {
-      for (let i = 0; i < n; i += 1) {
+    this.heights = new Float32Array(N * N);
+    for (let j = 0; j < N; j += 1) {
+      for (let i = 0; i < N; i += 1) {
         const x = -WORLD_HALF + i * CELL;
         const z = -WORLD_HALF + j * CELL;
-        this.heights[j * n + i] = this.computeHeight(x, z);
+        this.heights[j * N + i] = this.computeHeight(x, z);
       }
     }
     this.mesh = this.buildMesh();
+    this.skirt = new THREE.Mesh(this.buildSkirt(), this.mesh.material);
+    this.skirt.name = 'terrain-skirt';
     this.water = this.buildWater();
     this.lakeWater = this.buildLake();
   }
 
   /** Exact height on the rendered triangle surface. */
   getHeight(x: number, z: number): number {
-    const n = SEGMENTS + 1;
+    if (x < -WORLD_HALF || x >= WORLD_HALF || z < -WORLD_HALF || z >= WORLD_HALF) return this.frontierHeight(x, z);
     const gx = clamp((x + WORLD_HALF) / CELL, 0, SEGMENTS - 0.0001);
     const gz = clamp((z + WORLD_HALF) / CELL, 0, SEGMENTS - 0.0001);
     const i = Math.floor(gx);
     const j = Math.floor(gz);
     const fx = gx - i;
     const fz = gz - j;
-    const h00 = this.heights[j * n + i];
-    const h10 = this.heights[j * n + i + 1];
-    const h01 = this.heights[(j + 1) * n + i];
-    const h11 = this.heights[(j + 1) * n + i + 1];
-    if (fx + fz <= 1) return h00 + (h10 - h00) * fx + (h01 - h00) * fz;
-    return h11 + (h01 - h11) * (1 - fx) + (h10 - h11) * (1 - fz);
+    return tri(this.heights[j * N + i], this.heights[j * N + i + 1], this.heights[(j + 1) * N + i], this.heights[(j + 1) * N + i + 1], fx, fz);
+  }
+
+  /** Ground beyond the valley: a streamed chunk's grid, or the same grid sampled on demand. */
+  private frontierHeight(x: number, z: number): number {
+    const ci = Math.floor(x / CHUNK);
+    const cj = Math.floor(z / CHUNK);
+    const gx = (x - ci * CHUNK) / CCELL;
+    const gz = (z - cj * CHUNK) / CCELL;
+    const i = Math.min(CHUNK_SEG - 1, Math.floor(gx));
+    const j = Math.min(CHUNK_SEG - 1, Math.floor(gz));
+    const fx = gx - i;
+    const fz = gz - j;
+    const c = this.chunks.get(chunkKey(ci, cj));
+    if (c) return tri(c[j * CN + i], c[j * CN + i + 1], c[(j + 1) * CN + i], c[(j + 1) * CN + i + 1], fx, fz);
+    const x0 = ci * CHUNK + i * CCELL;
+    const z0 = cj * CHUNK + j * CCELL;
+    return tri(this.sample(x0, z0), this.sample(x0 + CCELL, z0), this.sample(x0, z0 + CCELL), this.sample(x0 + CCELL, z0 + CCELL), fx, fz);
+  }
+
+  /** A streamed chunk's heights (CN×CN on the 2.5 m grid), so getHeight matches its mesh. */
+  setChunkHeights(ci: number, cj: number, heights: Float32Array | null): void {
+    if (heights) this.chunks.set(chunkKey(ci, cj), heights);
+    else this.chunks.delete(chunkKey(ci, cj));
+  }
+
+  /** The ground function itself at a grid point (valley, ring, passes and outlands). */
+  sample(x: number, z: number): number {
+    return this.computeHeight(x, z);
+  }
+
+  /**
+   * A new world: the outlands follow the new seed. The valley out to the ring
+   * never changes; only its far corners (past RING_IN) are resampled.
+   */
+  reseed(seed: number): void {
+    if (seed === this.lands.seed) return;
+    this.lands = new Lands(seed);
+    this.chunks.clear();
+    for (let j = 0; j < N; j += 1) {
+      for (let i = 0; i < N; i += 1) {
+        const x = -WORLD_HALF + i * CELL;
+        const z = -WORLD_HALF + j * CELL;
+        if (Math.hypot(x, z) > RING_IN - 2) this.heights[j * N + i] = this.computeHeight(x, z);
+      }
+    }
+    const geo = this.mesh.geometry;
+    const pos = geo.getAttribute('position') as THREE.BufferAttribute;
+    for (let k = 0; k < N * N; k += 1) pos.setY(k, this.heights[k]);
+    pos.needsUpdate = true;
+    this.paint(geo.getAttribute('color') as THREE.BufferAttribute);
+    geo.computeVertexNormals();
+    geo.computeBoundingSphere();
+    this.skirt.geometry.dispose();
+    this.skirt.geometry = this.buildSkirt();
   }
 
   /** Approximate slope (0 flat … 1 = 45°). */
@@ -95,18 +160,24 @@ export class Terrain {
 
   /** Natural height before plateaus — used to colour slopes/roads. */
   private computeHeight(x: number, z: number, rail = true): number {
+    const r = Math.hypot(x, z);
+    if (r >= RING_OUT) return this.lands.height(x, z);
     const nz = this.noise;
     let h = nz.fbm(x * 0.0065, z * 0.0065, 5) * 10 + nz.ridged(x * 0.011 + 40, z * 0.011 - 12, 3) * 9 - 3;
     // gentle hills band
     h += Math.max(0, nz.fbm(x * 0.0025 + 7, z * 0.0025 + 3, 2)) * 14;
 
-    // Atlas ring
-    const r = Math.hypot(x, z);
+    // Atlas ring, cut down to a walkable col at each pass
     const m = smoothstep(PLAY_RADIUS - 18, PLAY_RADIUS + 70, r);
     if (m > 0) {
       const ridge = nz.ridged(x * 0.008, z * 0.008, 5);
-      h += m * (16 + ridge * 38 + m * 46);
+      h += m * (16 + ridge * 38 + m * 46) * (1 - passWeight(x, z) * 0.93);
     }
+    // the pass floors are worn smooth by the mule tracks
+    const pw = passWeight(x, z);
+    if (pw > 0) h = lerp(h, 3 + nz.fbm(x * 0.004, z * 0.004, 2) * 6 + m * 6, pw * 0.75);
+    // past the ring the outlands take over
+    if (r > RING_IN) return lerp(h, this.lands.height(x, z), smoothstep(RING_IN, RING_OUT, r));
 
     // Oued carved bed
     const dOued = distToPolyline(x, z, OUED);
@@ -170,86 +241,21 @@ export class Terrain {
   private buildMesh(): THREE.Mesh {
     const n = SEGMENTS + 1;
     const positions = new Float32Array(n * n * 3);
-    const colors = new Float32Array(n * n * 3);
     const uvs = new Float32Array(n * n * 2);
-    const c = new THREE.Color();
-    const earth = new THREE.Color('#b8693d');
-    const ochre = new THREE.Color('#cf8f55');
-    const dust = new THREE.Color('#dcb07c');
-    const scrub = new THREE.Color('#7f7f46');
-    const green = new THREE.Color('#5f7037');
-    const rock = new THREE.Color('#7a6656');
-    const darkRock = new THREE.Color('#5a4a40');
-    const snow = new THREE.Color('#f1efe9');
-    const road = new THREE.Color('#e0c08f');
-    const packed = new THREE.Color('#c99f72');
-    const ballast = new THREE.Color('#8a8078');
-
     for (let j = 0; j < n; j += 1) {
       for (let i = 0; i < n; i += 1) {
         const idx = j * n + i;
         const x = -WORLD_HALF + i * CELL;
         const z = -WORLD_HALF + j * CELL;
-        const h = this.heights[idx];
         positions[idx * 3] = x;
-        positions[idx * 3 + 1] = h;
+        positions[idx * 3 + 1] = this.heights[idx];
         positions[idx * 3 + 2] = z;
         uvs[idx * 2] = x / 6;
         uvs[idx * 2 + 1] = z / 6;
-
-        // slope from neighbours
-        const hl = this.heights[j * n + Math.max(0, i - 1)];
-        const hr = this.heights[j * n + Math.min(n - 1, i + 1)];
-        const hd = this.heights[Math.max(0, j - 1) * n + i];
-        const hu = this.heights[Math.min(n - 1, j + 1) * n + i];
-        const slope = Math.hypot(hr - hl, hu - hd) / (2 * CELL);
-
-        const v = this.detail.fbm(x * 0.03, z * 0.03, 3);
-        const v2 = this.detail.fbm(x * 0.12 + 9, z * 0.12, 2);
-        c.copy(earth).lerp(ochre, clamp(0.5 + v * 0.8, 0, 1));
-        c.lerp(dust, clamp(0.35 + v2 * 0.5, 0, 0.6));
-
-        // scrub & green near water / patches
-        const dOued = distToPolyline(x, z, OUED);
-        const wet = 1 - smoothstep(4, 26, dOued);
-        const patch = smoothstep(0.25, 0.6, this.noise.fbm(x * 0.02 + 30, z * 0.02 - 8, 3));
-        c.lerp(scrub, clamp(patch * 0.55 + wet * 0.5, 0, 0.8));
-        const oasis = zone('oasis');
-        const dOasis = Math.hypot(x - oasis.x, z - oasis.z);
-        c.lerp(green, (1 - smoothstep(8, 34, dOasis)) * 0.85);
-
-        // settlements: packed earth
-        for (const zn of ZONES) {
-          if (zn.id === 'oasis') continue;
-          const d = Math.hypot(x - zn.x, z - zn.z);
-          const w = 1 - smoothstep(zn.radius * 0.7, zn.radius + 6, d);
-          if (w > 0) c.lerp(packed, w * 0.55);
-        }
-
-        // roads with wheel ruts
-        const dr = distToRoads(x, z);
-        const wr = 1 - smoothstep(1.6, 4.2, dr);
-        if (wr > 0) {
-          const rut = Math.abs(dr - 1.1) < 0.35 ? 0.85 : 1;
-          c.lerp(road, wr * 0.85).multiplyScalar(lerp(1, rut, wr));
-        }
-
-        // runway packed dirt, rail ballast, lake shore mud
-        for (const strip of STRIPS) c.lerp(road, (1 - smoothstep(0, 3, distToStrip(strip, x, z))) * 0.7);
-        c.lerp(ballast, (1 - smoothstep(1.5, 3.2, distToPolyline(x, z, RAIL))) * 0.9);
-        const dLake = Math.hypot(x - LAKE.x, z - LAKE.z);
-        c.lerp(green, (1 - smoothstep(LAKE.water, LAKE.r + 14, dLake)) * 0.7);
-
-        // rock on slopes, snow on peaks
-        c.lerp(rock, smoothstep(0.35, 0.8, slope));
-        c.lerp(darkRock, smoothstep(0.9, 1.4, slope) * 0.6);
-        c.lerp(snow, smoothstep(88, 120, h + v * 12) * (1 - smoothstep(1.1, 1.8, slope) * 0.5));
-
-        colors[idx * 3] = c.r;
-        colors[idx * 3 + 1] = c.g;
-        colors[idx * 3 + 2] = c.b;
       }
     }
+    const colors = new THREE.BufferAttribute(new Float32Array(n * n * 3), 3);
+    this.paint(colors);
 
     const indices = new Uint32Array(SEGMENTS * SEGMENTS * 6);
     let k = 0;
@@ -270,7 +276,7 @@ export class Terrain {
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geometry.setAttribute('color', colors);
     geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
     geometry.setIndex(new THREE.BufferAttribute(indices, 1));
     geometry.computeVertexNormals();
@@ -286,6 +292,112 @@ export class Terrain {
     mesh.receiveShadow = true;
     mesh.name = 'terrain';
     return mesh;
+  }
+
+  /** Vertex colours of the valley heightfield (and, past the ring, the outlands' own). */
+  private paint(attr: THREE.BufferAttribute): void {
+    const n = SEGMENTS + 1;
+    const colors = attr.array as Float32Array;
+    const c = new THREE.Color();
+    for (let j = 0; j < n; j += 1) {
+      for (let i = 0; i < n; i += 1) {
+        const idx = j * n + i;
+        // slope from neighbours
+        const hl = this.heights[j * n + Math.max(0, i - 1)];
+        const hr = this.heights[j * n + Math.min(n - 1, i + 1)];
+        const hd = this.heights[Math.max(0, j - 1) * n + i];
+        const hu = this.heights[Math.min(n - 1, j + 1) * n + i];
+        const slope = Math.hypot(hr - hl, hu - hd) / (2 * CELL);
+        this.colorAt(-WORLD_HALF + i * CELL, -WORLD_HALF + j * CELL, this.heights[idx], slope, c);
+        colors[idx * 3] = c.r;
+        colors[idx * 3 + 1] = c.g;
+        colors[idx * 3 + 2] = c.b;
+      }
+    }
+    attr.needsUpdate = true;
+  }
+
+  /** Ground colour at a point: the valley's palette, handing over to the outlands' past the ring. */
+  colorAt(x: number, z: number, h: number, slope: number, c: THREE.Color): THREE.Color {
+    const r = Math.hypot(x, z);
+    if (r >= RING_OUT) return this.lands.groundColor(x, z, h, slope, c);
+    const v = this.detail.fbm(x * 0.03, z * 0.03, 3);
+    const v2 = this.detail.fbm(x * 0.12 + 9, z * 0.12, 2);
+    c.copy(P.earth).lerp(P.ochre, clamp(0.5 + v * 0.8, 0, 1));
+    c.lerp(P.dust, clamp(0.35 + v2 * 0.5, 0, 0.6));
+
+    // scrub & green near water / patches
+    const dOued = distToPolyline(x, z, OUED);
+    const wet = 1 - smoothstep(4, 26, dOued);
+    const patch = smoothstep(0.25, 0.6, this.noise.fbm(x * 0.02 + 30, z * 0.02 - 8, 3));
+    c.lerp(P.scrub, clamp(patch * 0.55 + wet * 0.5, 0, 0.8));
+    const oasis = zone('oasis');
+    const dOasis = Math.hypot(x - oasis.x, z - oasis.z);
+    c.lerp(P.green, (1 - smoothstep(8, 34, dOasis)) * 0.85);
+
+    // settlements: packed earth
+    for (const zn of ZONES) {
+      if (zn.id === 'oasis') continue;
+      const d = Math.hypot(x - zn.x, z - zn.z);
+      const w = 1 - smoothstep(zn.radius * 0.7, zn.radius + 6, d);
+      if (w > 0) c.lerp(P.packed, w * 0.55);
+    }
+
+    // roads with wheel ruts
+    const dr = distToRoads(x, z);
+    const wr = 1 - smoothstep(1.6, 4.2, dr);
+    if (wr > 0) {
+      const rut = Math.abs(dr - 1.1) < 0.35 ? 0.85 : 1;
+      c.lerp(P.road, wr * 0.85).multiplyScalar(lerp(1, rut, wr));
+    }
+
+    // runway packed dirt, rail ballast, lake shore mud
+    for (const strip of STRIPS) c.lerp(P.road, (1 - smoothstep(0, 3, distToStrip(strip, x, z))) * 0.7);
+    c.lerp(P.ballast, (1 - smoothstep(1.5, 3.2, distToPolyline(x, z, RAIL))) * 0.9);
+    const dLake = Math.hypot(x - LAKE.x, z - LAKE.z);
+    c.lerp(P.green, (1 - smoothstep(LAKE.water, LAKE.r + 14, dLake)) * 0.7);
+
+    // mule tracks over the passes
+    const dt = trackDist(x, z);
+    if (dt < 4.2) c.lerp(P.road, (1 - smoothstep(1.6, 4.2, dt)) * 0.8);
+
+    // rock on slopes, snow on peaks
+    c.lerp(P.rock, smoothstep(0.35, 0.8, slope));
+    c.lerp(P.darkRock, smoothstep(0.9, 1.4, slope) * 0.6);
+    c.lerp(P.snow, smoothstep(88, 120, h + v * 12) * (1 - smoothstep(1.1, 1.8, slope) * 0.5));
+
+    if (r > RING_IN - 20) c.lerp(this.lands.groundColor(x, z, h, slope, OUT), smoothstep(RING_IN - 20, RING_OUT, r));
+    return c;
+  }
+
+  /** A 12 m curtain under the valley heightfield's outer edge, facing out (the side the coarse horizon is seen from). */
+  private buildSkirt(): THREE.BufferGeometry {
+    const ring: [number, number][] = [];
+    for (let i = 0; i < SEGMENTS; i += 1) ring.push([i, 0]);
+    for (let j = 0; j < SEGMENTS; j += 1) ring.push([SEGMENTS, j]);
+    for (let i = SEGMENTS; i > 0; i -= 1) ring.push([i, SEGMENTS]);
+    for (let j = SEGMENTS; j > 0; j -= 1) ring.push([0, j]);
+    const pos: number[] = [];
+    const col: number[] = [];
+    const c = new THREE.Color('#7a6656');
+    for (let k = 0; k < ring.length; k += 1) {
+      const [i0, j0] = ring[k];
+      const [i1, j1] = ring[(k + 1) % ring.length];
+      const ax = -WORLD_HALF + i0 * CELL;
+      const az = -WORLD_HALF + j0 * CELL;
+      const bx = -WORLD_HALF + i1 * CELL;
+      const bz = -WORLD_HALF + j1 * CELL;
+      const ah = this.heights[j0 * N + i0];
+      const bh = this.heights[j1 * N + i1];
+      pos.push(ax, ah, az, bx, bh, bz, ax, ah - 12, az, bx, bh, bz, bx, bh - 12, bz, ax, ah - 12, az);
+      for (let v = 0; v < 6; v += 1) col.push(c.r, c.g, c.b);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array((pos.length / 3) * 2), 2));
+    geo.computeVertexNormals();
+    return geo;
   }
 
   private buildLake(): THREE.Mesh {
@@ -352,4 +464,25 @@ function createGroundDetailTexture(): THREE.CanvasTexture {
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 8;
   return tex;
+}
+
+const P = {
+  earth: new THREE.Color('#b8693d'),
+  ochre: new THREE.Color('#cf8f55'),
+  dust: new THREE.Color('#dcb07c'),
+  scrub: new THREE.Color('#7f7f46'),
+  green: new THREE.Color('#5f7037'),
+  rock: new THREE.Color('#7a6656'),
+  darkRock: new THREE.Color('#5a4a40'),
+  snow: new THREE.Color('#f1efe9'),
+  road: new THREE.Color('#e0c08f'),
+  packed: new THREE.Color('#c99f72'),
+  ballast: new THREE.Color('#8a8078'),
+};
+const OUT = new THREE.Color();
+
+/** Height inside one grid cell, split the way the meshes are triangulated. */
+function tri(h00: number, h10: number, h01: number, h11: number, fx: number, fz: number): number {
+  if (fx + fz <= 1) return h00 + (h10 - h00) * fx + (h01 - h00) * fz;
+  return h11 + (h01 - h11) * (1 - fx) + (h10 - h11) * (1 - fz);
 }

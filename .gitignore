@@ -11,7 +11,9 @@ artifacts/preview/
 .DS_Store
 artifacts/shots/
 # raw Tripo downloads (tens of MB each); only the manifest and the models the game loads are tracked
-public/assets/characters/
+public/assets/characters/*
+!public/assets/characters/manifest.json
+!public/assets/characters/fidai/
 public/assets/models/*
 !public/assets/models/manifest.json
 !public/assets/models/bow/

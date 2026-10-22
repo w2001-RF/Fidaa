@@ -4,6 +4,7 @@ import { L } from '../i18n';
 import type { CampKind } from '../game/Items';
 import type { Interactable } from '../game/types';
 import type { Collider, CollisionWorld } from './Collision';
+import { LIMIT, RING_OUT } from './Lands';
 import { LAKE, PLAY_RADIUS } from './layout';
 import type { Terrain } from './Terrain';
 
@@ -36,7 +37,9 @@ export class Camp {
   /** Room to set a piece down here: flat enough, dry, nothing in the way. */
   canPlace(kind: CampKind, x: number, z: number): boolean {
     if (this.pieces.length >= Camp.MAX) return false;
-    if (Math.hypot(x, z) > PLAY_RADIUS - 6) return false;
+    // the valley or the open lands, not up in the mountain ring nor past the edge
+    const r = Math.hypot(x, z);
+    if ((r > PLAY_RADIUS - 6 && r < RING_OUT) || Math.max(Math.abs(x), Math.abs(z)) > LIMIT - 30) return false;
     if (Math.hypot(x - LAKE.x, z - LAKE.z) < LAKE.water + 1) return false;
     if (this.terrain.getSlope(x, z) > 0.45) return false;
     return !this.collision.blockedAt(x, z, SIZE[kind], this.terrain.getHeight(x, z));
